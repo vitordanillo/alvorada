@@ -1,6 +1,7 @@
 'use server';
 
 import { prisma } from './db';
+import { Prisma } from '@prisma/client';
 import { cookies } from 'next/headers';
 import bcrypt from 'bcryptjs';
 import type {
@@ -172,6 +173,34 @@ const mapPurchaseOrder = (po: any): PurchaseOrder => ({
 
 async function checkAndSeedDatabase() {
   try {
+    // Ensure default store exists
+    let defaultStore = await prisma.store.findFirst();
+    if (!defaultStore) {
+      defaultStore = await prisma.store.create({
+        data: {
+          name: "Loja Principal",
+          cnpj: "00.000.000/0001-00",
+          address: "Rua Principal, 123",
+          phone: "(11) 99999-9999",
+        }
+      });
+      console.log("Default store created:", defaultStore.name);
+    }
+
+    // Self-healing migration: Associate any legacy null-store records with the default store
+    await prisma.user.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
+    await prisma.product.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
+    await prisma.supplier.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
+    await prisma.customer.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
+    await prisma.sale.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
+    await prisma.cashRegisterSession.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
+    await prisma.cashTransaction.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
+    await prisma.stockAdjustmentLog.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
+    await prisma.stockEntryLog.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
+    await prisma.productChangeLog.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
+    await prisma.accountsPayable.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
+    await prisma.purchaseOrder.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
+
     const seedFlag = await prisma.systemConfig.findUnique({ where: { key: 'flags' } });
     const isSeeded = seedFlag ? (seedFlag.value as any)?.seeded_v2 : false;
 
@@ -189,6 +218,7 @@ async function checkAndSeedDatabase() {
             email: 'admin@alvorada.com',
             passwordHash: hashedAdminPassword,
             role: 'Administrador',
+            storeId: defaultStore.id,
           }
         });
         console.log("Default admin created: admin@alvorada.com / 123456");
@@ -204,6 +234,7 @@ async function checkAndSeedDatabase() {
               contactName: supplier.contactName || null,
               phone: supplier.phone || null,
               email: supplier.email || null,
+              storeId: defaultStore.id,
             }
           });
         }
@@ -230,6 +261,7 @@ async function checkAndSeedDatabase() {
               supplier: product.supplier,
               barcode: product.barcode || null,
               imageUrl: product.imageUrl || null,
+              storeId: defaultStore.id,
             }
           });
         }
@@ -262,6 +294,32 @@ async function checkAndSeedDatabase() {
   }
 }
 
+async function getAuthenticatedUser(): Promise<User> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get('firebase-auth-token')?.value;
+  if (!token) throw new Error("Usuário não autenticado.");
+
+  const user = await prisma.user.findUnique({ where: { uid: token } });
+  if (!user) throw new Error("Usuário não encontrado.");
+
+  return {
+    uid: user.uid,
+    name: user.name,
+    email: user.email,
+    role: user.role as any,
+    avatarUrl: user.avatarUrl || undefined,
+    storeId: user.storeId || undefined,
+  };
+}
+
+async function verifyUserRole(allowedRoles: User['role'][]): Promise<User> {
+  const user = await getAuthenticatedUser();
+  if (!allowedRoles.includes(user.role)) {
+    throw new Error("Acesso negado: privilégios insuficientes.");
+  }
+  return user;
+}
+
 // --- AUTHENTICATION ACTIONS ---
 
 export async function getCurrentUserAction(): Promise<User | null> {
@@ -281,6 +339,7 @@ export async function getCurrentUserAction(): Promise<User | null> {
       email: user.email,
       role: user.role as any,
       avatarUrl: user.avatarUrl || undefined,
+      storeId: user.storeId || undefined,
     };
   } catch (err) {
     console.error("Error getting current user:", err);
@@ -353,21 +412,28 @@ export async function logoutUserAction(): Promise<void> {
 }
 
 export async function updateUserRoleAction(uid: string, role: User['role']): Promise<void> {
+  const user = await verifyUserRole(['Administrador']);
+  const targetUser = await prisma.user.findUnique({ where: { uid } });
   await prisma.user.update({
     where: { uid },
     data: { role },
   });
+  await logAuditEvent('Alterar Cargo de Usuário', `Cargo do usuário ${targetUser?.name || uid} alterado de ${targetUser?.role} para ${role} por ${user.name}`);
 }
 
 // --- INITIAL DATA FETCH ACTION ---
 
-export async function getInitialDataAction(role: string) {
-  const productsPromise = prisma.product.findMany();
-  const customersPromise = prisma.customer.findMany();
-  const salesPromise = prisma.sale.findMany({ orderBy: { date: 'desc' } });
-  const suppliersPromise = prisma.supplier.findMany();
-  const cashSessionsPromise = prisma.cashRegisterSession.findMany({ orderBy: { openingTime: 'desc' } });
-  const stockAdjustmentLogsPromise = prisma.stockAdjustmentLog.findMany({ orderBy: { date: 'desc' } });
+export async function getInitialDataAction() {
+  const user = await getAuthenticatedUser();
+  const role = user.role;
+  const storeFilter = { storeId: user.storeId };
+
+  const productsPromise = prisma.product.findMany({ where: storeFilter });
+  const customersPromise = prisma.customer.findMany({ where: storeFilter });
+  const salesPromise = prisma.sale.findMany({ where: storeFilter, orderBy: { date: 'desc' } });
+  const suppliersPromise = prisma.supplier.findMany({ where: storeFilter });
+  const cashSessionsPromise = prisma.cashRegisterSession.findMany({ where: storeFilter, orderBy: { openingTime: 'desc' } });
+  const stockAdjustmentLogsPromise = prisma.stockAdjustmentLog.findMany({ where: storeFilter, orderBy: { date: 'desc' } });
 
   const isManagement = role === 'Administrador' || role === 'Gerente';
 
@@ -389,14 +455,14 @@ export async function getInitialDataAction(role: string) {
 
   if (isManagement) {
     const promises: Promise<any>[] = [
-      prisma.stockEntryLog.findMany({ orderBy: { date: 'desc' } }),
-      prisma.productChangeLog.findMany({ orderBy: { date: 'desc' } }),
-      prisma.accountsPayable.findMany({ orderBy: { dueDate: 'asc' } }),
-      prisma.purchaseOrder.findMany({ orderBy: { dateCreated: 'desc' } }),
+      prisma.stockEntryLog.findMany({ where: storeFilter, orderBy: { date: 'desc' } }),
+      prisma.productChangeLog.findMany({ where: storeFilter, orderBy: { date: 'desc' } }),
+      prisma.accountsPayable.findMany({ where: storeFilter, orderBy: { dueDate: 'asc' } }),
+      prisma.purchaseOrder.findMany({ where: storeFilter, orderBy: { dateCreated: 'desc' } }),
     ];
 
     if (role === 'Administrador') {
-      promises.push(prisma.user.findMany());
+      promises.push(prisma.user.findMany({ where: storeFilter }));
       promises.push(prisma.systemConfig.findUnique({ where: { key: 'config' } }));
     }
 
@@ -460,6 +526,7 @@ export async function getCashTransactionsAction(sessionId: string): Promise<Cash
 
 // Products
 export async function addProductAction(productData: ProductFormData): Promise<void> {
+  const user = await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
   const counterKey = 'products_counter';
   
   await prisma.$transaction(async (tx) => {
@@ -485,7 +552,8 @@ export async function addProductAction(productData: ProductFormData): Promise<vo
         unit: productData.unit,
         supplier: productData.supplier,
         barcode: productData.barcode || null,
-        imageUrl: productData.imageUrl || null,
+        imageUrl: (productData as any).imageUrl || null,
+        storeId: user.storeId,
       }
     });
 
@@ -497,7 +565,8 @@ export async function addProductAction(productData: ProductFormData): Promise<vo
   });
 }
 
-export async function updateProductAction(updatedProductData: Product, user: { uid: string; name: string }): Promise<void> {
+export async function updateProductAction(updatedProductData: Product): Promise<void> {
+  const user = await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
   const { id, ...data } = updatedProductData;
 
   await prisma.$transaction(async (tx) => {
@@ -541,6 +610,7 @@ export async function updateProductAction(updatedProductData: Product, user: { u
           changedByUid: user.uid,
           changedByName: user.name,
           changes,
+          storeId: user.storeId,
         }
       });
     }
@@ -548,6 +618,7 @@ export async function updateProductAction(updatedProductData: Product, user: { u
 }
 
 export async function setProductStatusAction(productId: string, status: 'Ativo' | 'Inativo'): Promise<void> {
+  await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
   await prisma.product.update({
     where: { id: productId },
     data: { status },
@@ -556,9 +627,9 @@ export async function setProductStatusAction(productId: string, status: 'Ativo' 
 
 export async function addStockToProductsAction(
   items: { productId: string; quantity: number; cost: number }[],
-  supplier: { id: string; name: string },
-  user: { uid: string; name: string }
+  supplier: { id: string; name: string }
 ): Promise<void> {
+  const user = await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
   const productDetails = [];
 
   for (const item of items) {
@@ -615,6 +686,7 @@ export async function addStockToProductsAction(
         totalItems,
         registeredByUid: user.uid,
         registeredByName: user.name,
+        storeId: user.storeId,
       }
     });
   }
@@ -624,9 +696,9 @@ export async function adjustStockAction(
   productId: string,
   newQuantity: number,
   reason: StockAdjustmentLog['reason'],
-  notes: string,
-  user: { uid: string; name: string }
+  notes: string
 ): Promise<void> {
+  const user = await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
   await prisma.$transaction(async (tx) => {
     const product = await tx.product.findUnique({ where: { id: productId } });
     if (!product) throw new Error("Produto não encontrado.");
@@ -641,6 +713,7 @@ export async function adjustStockAction(
         newQuantity,
         reason,
         notes: notes || null,
+        storeId: user.storeId,
       }
     });
 
@@ -653,6 +726,7 @@ export async function adjustStockAction(
 
 // Customers
 export async function addCustomerAction(customerData: Omit<Customer, 'id' | 'balance'>): Promise<void> {
+  const user = await verifyUserRole(['Administrador', 'Gerente']);
   await prisma.customer.create({
     data: {
       name: customerData.name,
@@ -662,11 +736,13 @@ export async function addCustomerAction(customerData: Omit<Customer, 'id' | 'bal
       balance: 0,
       notes: customerData.notes || null,
       tags: customerData.tags || [],
+      storeId: user.storeId,
     }
   });
 }
 
 export async function updateCustomerAction(updatedCustomer: Customer): Promise<void> {
+  await verifyUserRole(['Administrador', 'Gerente']);
   const { id, ...data } = updatedCustomer;
   await prisma.customer.update({
     where: { id },
@@ -682,15 +758,16 @@ export async function updateCustomerAction(updatedCustomer: Customer): Promise<v
 }
 
 export async function deleteCustomerAction(customerId: string): Promise<void> {
+  await verifyUserRole(['Administrador', 'Gerente']);
   await prisma.customer.delete({ where: { id: customerId } });
 }
 
 export async function addCreditPaymentAction(
   customerId: string,
   amount: number,
-  activeSessionId: string,
-  user: { uid: string; name: string }
+  activeSessionId: string
 ): Promise<CashTransaction> {
+  const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
   return await prisma.$transaction(async (tx) => {
     const customer = await tx.customer.findUnique({ where: { id: customerId } });
     if (!customer) throw new Error("Cliente não encontrado.");
@@ -718,6 +795,7 @@ export async function addCreditPaymentAction(
         registeredByName: user.name,
         customerId,
         customerName: customer.name,
+        storeId: user.storeId,
       }
     });
 
@@ -728,9 +806,9 @@ export async function addCreditPaymentAction(
 // Sales
 export async function addSaleAction(
   saleData: Omit<Sale, 'id' | 'date' | 'status'>,
-  activeSessionId: string,
-  user: { uid: string; name: string }
+  activeSessionId: string
 ): Promise<Sale> {
+  const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
   return await prisma.$transaction(async (tx) => {
     const productIds = saleData.items.map(i => i.productId);
     const products = await tx.product.findMany({ where: { id: { in: productIds } } });
@@ -761,6 +839,7 @@ export async function addSaleAction(
         paymentMethods: saleData.paymentMethods,
         cashRegisterSessionId: activeSessionId,
         status: 'Concluída',
+        storeId: user.storeId,
       }
     });
 
@@ -808,7 +887,51 @@ export async function addSaleAction(
       data: sessionUpdate,
     });
 
+    let pointsUsed = 0;
+    for (const payment of saleData.paymentMethods) {
+      if (payment.method === 'Pontos') {
+        pointsUsed += payment.amount * 10; // R$ 1,00 = 10 pontos
+      }
+    }
+
+    if (pointsUsed > 0 && saleData.customerId !== 'default') {
+      const customer = await tx.customer.findUnique({ where: { id: saleData.customerId } });
+      if (!customer) throw new Error("Cliente não encontrado.");
+      if ((customer.loyaltyPoints || 0) < pointsUsed) {
+        throw new Error(`Pontos de fidelidade insuficientes. Necessário: ${pointsUsed}, Disponível: ${customer.loyaltyPoints || 0}`);
+      }
+      await tx.customer.update({
+        where: { id: saleData.customerId },
+        data: { loyaltyPoints: { decrement: pointsUsed } },
+      });
+    }
+
+    // Accumulate points for new purchase (excluding any portion paid with points)
+    let cashOrCardTotal = saleData.total;
+    for (const payment of saleData.paymentMethods) {
+      if (payment.method === 'Pontos') {
+        cashOrCardTotal -= payment.amount;
+      }
+    }
+    if (cashOrCardTotal > 0 && saleData.customerId !== 'default') {
+      const pointsEarned = Math.floor(cashOrCardTotal * 0.1); // 1 ponto por R$ 10,00 gastos
+      if (pointsEarned > 0) {
+        await tx.customer.update({
+          where: { id: saleData.customerId },
+          data: { loyaltyPoints: { increment: pointsEarned } },
+        });
+      }
+    }
+
     if (fiadoAmount > 0 && saleData.customerId !== 'default') {
+      const customer = await tx.customer.findUnique({ where: { id: saleData.customerId } });
+      if (!customer) throw new Error("Cliente não encontrado.");
+
+      const availableCredit = customer.creditLimit - customer.balance;
+      if (fiadoAmount > availableCredit) {
+        throw new Error(`Limite de crédito excedido para o cliente ${customer.name}. Limite disponível: R$ ${availableCredit.toFixed(2)}`);
+      }
+
       await tx.customer.update({
         where: { id: saleData.customerId },
         data: { balance: { increment: fiadoAmount } },
@@ -822,9 +945,9 @@ export async function addSaleAction(
 export async function cancelSaleAction(
   saleId: string,
   reason: string,
-  passwordAttempt: string,
-  user: { uid: string; name: string }
+  passwordAttempt: string
 ): Promise<void> {
+  const user = await verifyUserRole(['Administrador', 'Gerente']);
   const configDoc = await prisma.systemConfig.findUnique({ where: { key: 'config' } });
   const currentPassword = (configDoc?.value as any)?.cancellationPassword || '1234';
   if (passwordAttempt !== currentPassword) throw new Error("Senha de cancelamento incorreta.");
@@ -847,6 +970,7 @@ export async function cancelSaleAction(
     if (sale.cashRegisterSessionId) {
       const sessionUpdate: any = { totalSales: { decrement: sale.total } };
       let fiadoAmount = 0;
+      let pointsAmount = 0;
       const decPaymentMethods: any = {};
 
       const pMethods = sale.paymentMethods as any[];
@@ -860,6 +984,8 @@ export async function cancelSaleAction(
           decPaymentMethods['Pix'] = payment.amount;
         } else if (payment.method === 'Fiado' && sale.customerId !== 'default') {
           fiadoAmount = payment.amount;
+        } else if (payment.method === 'Pontos' && sale.customerId !== 'default') {
+          pointsAmount = payment.amount;
         }
       }
 
@@ -885,6 +1011,33 @@ export async function cancelSaleAction(
           data: { balance: { decrement: fiadoAmount } },
         });
       }
+
+      // Rollback loyalty points
+      if (sale.customerId !== 'default') {
+        // 1. Give back points used to pay
+        if (pointsAmount > 0) {
+          await tx.customer.update({
+            where: { id: sale.customerId },
+            data: { loyaltyPoints: { increment: pointsAmount * 10 } },
+          });
+        }
+        // 2. Subtract points earned during this purchase
+        let cashOrCardTotal = sale.total;
+        for (const payment of pMethods) {
+          if (payment.method === 'Pontos') {
+            cashOrCardTotal -= payment.amount;
+          }
+        }
+        if (cashOrCardTotal > 0) {
+          const pointsEarned = Math.floor(cashOrCardTotal * 0.1);
+          if (pointsEarned > 0) {
+            await tx.customer.update({
+              where: { id: sale.customerId },
+              data: { loyaltyPoints: { decrement: pointsEarned } },
+            });
+          }
+        }
+      }
     }
 
     await tx.sale.update({
@@ -897,12 +1050,15 @@ export async function cancelSaleAction(
         cancelledByName: user.name,
       }
     });
+
+    await logAuditEvent('Cancelamento de Venda', `Venda #${saleId.substring(0, 8)} cancelada por ${user.name}. Motivo: ${reason}`);
   });
 }
 
 // Cash Registers
-export async function openCashRegisterAction(openingBalance: number, user: { uid: string; name: string }): Promise<void> {
-  const activeSession = await prisma.cashRegisterSession.findFirst({ where: { status: 'Aberto' } });
+export async function openCashRegisterAction(openingBalance: number): Promise<void> {
+  const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
+  const activeSession = await prisma.cashRegisterSession.findFirst({ where: { status: 'Aberto', storeId: user.storeId } });
   if (activeSession) throw new Error("Já existe um caixa aberto.");
 
   await prisma.cashRegisterSession.create({
@@ -920,11 +1076,15 @@ export async function openCashRegisterAction(openingBalance: number, user: { uid
       status: 'Aberto',
       openedByUid: user.uid,
       openedByName: user.name,
+      storeId: user.storeId,
     }
   });
+
+  await logAuditEvent('Abertura de Caixa', `Caixa aberto com saldo inicial de R$ ${openingBalance.toFixed(2)} por ${user.name}`);
 }
 
-export async function closeCashRegisterAction(sessionId: string, closingBalance: number, user: { uid: string; name: string }): Promise<void> {
+export async function closeCashRegisterAction(sessionId: string, closingBalance: number): Promise<void> {
+  const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
   await prisma.cashRegisterSession.update({
     where: { id: sessionId },
     data: {
@@ -935,9 +1095,12 @@ export async function closeCashRegisterAction(sessionId: string, closingBalance:
       closedByName: user.name,
     }
   });
+
+  await logAuditEvent('Fechamento de Caixa', `Caixa fechado com saldo informado de R$ ${closingBalance.toFixed(2)} por ${user.name}`);
 }
 
-export async function correctCashClosingAction(sessionId: string, newClosingBalance: number, user: { uid: string; name: string }): Promise<void> {
+export async function correctCashClosingAction(sessionId: string, newClosingBalance: number): Promise<void> {
+  const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
   const session = await prisma.cashRegisterSession.findUnique({ where: { id: sessionId } });
   if (!session) throw new Error("Sessão não encontrada");
 
@@ -955,9 +1118,12 @@ export async function correctCashClosingAction(sessionId: string, newClosingBala
       }
     }
   });
+
+  await logAuditEvent('Correção de Saldo de Fechamento', `Saldo de fechamento corrigido de R$ ${oldClosingBalance.toFixed(2)} para R$ ${newClosingBalance.toFixed(2)} por ${user.name}`);
 }
 
-export async function correctOpeningBalanceAction(sessionId: string, newOpeningBalance: number, user: { uid: string; name: string }): Promise<void> {
+export async function correctOpeningBalanceAction(sessionId: string, newOpeningBalance: number): Promise<void> {
+  const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
   await prisma.$transaction(async (tx) => {
     const session = await tx.cashRegisterSession.findUnique({ where: { id: sessionId } });
     if (!session) throw new Error("Sessão de caixa não encontrada.");
@@ -977,11 +1143,14 @@ export async function correctOpeningBalanceAction(sessionId: string, newOpeningB
         }
       }
     });
+
+    await logAuditEvent('Correção de Saldo de Abertura', `Saldo de abertura corrigido de R$ ${session.openingBalance.toFixed(2)} para R$ ${newOpeningBalance.toFixed(2)} por ${user.name}`);
   });
 }
 
 export async function reopenCashRegisterAction(sessionId: string): Promise<void> {
-  const activeSession = await prisma.cashRegisterSession.findFirst({ where: { status: 'Aberto' } });
+  const user = await verifyUserRole(['Administrador', 'Gerente']);
+  const activeSession = await prisma.cashRegisterSession.findFirst({ where: { status: 'Aberto', storeId: user.storeId } });
   if (activeSession) throw new Error("Não é possível reabrir um caixa enquanto outro já está ativo.");
 
   await prisma.cashRegisterSession.update({
@@ -992,12 +1161,15 @@ export async function reopenCashRegisterAction(sessionId: string): Promise<void>
       closingBalance: null,
       closedByUid: null,
       closedByName: null,
-      correction: null,
+      correction: Prisma.DbNull,
     }
   });
+
+  await logAuditEvent('Reabertura de Caixa', `Sessão de caixa reaberta por ${user.name}`);
 }
 
 export async function cancelCashRegisterOpeningAction(sessionId: string): Promise<void> {
+  await verifyUserRole(['Administrador', 'Gerente']);
   await prisma.$transaction(async (tx) => {
     const session = await tx.cashRegisterSession.findUnique({ where: { id: sessionId } });
     if (!session) throw new Error("Sessão de caixa não encontrada.");
@@ -1011,9 +1183,9 @@ export async function cancelCashRegisterOpeningAction(sessionId: string): Promis
 
 export async function addCashTransactionAction(
   transactionData: Omit<CashTransaction, 'id' | 'date' | 'sessionId' | 'registeredBy'>,
-  activeSessionId: string,
-  user: { uid: string; name: string }
+  activeSessionId: string
 ): Promise<void> {
+  const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
   await prisma.$transaction(async (tx) => {
     await tx.cashTransaction.create({
       data: {
@@ -1023,6 +1195,7 @@ export async function addCashTransactionAction(
         description: transactionData.description,
         registeredByUid: user.uid,
         registeredByName: user.name,
+        storeId: user.storeId,
       }
     });
 
@@ -1042,17 +1215,20 @@ export async function addCashTransactionAction(
 
 // Suppliers
 export async function addSupplierAction(supplierData: Omit<Supplier, 'id'>): Promise<void> {
+  const user = await verifyUserRole(['Administrador', 'Gerente']);
   await prisma.supplier.create({
     data: {
       name: supplierData.name,
       contactName: supplierData.contactName || null,
       phone: supplierData.phone || null,
       email: supplierData.email || null,
+      storeId: user.storeId,
     }
   });
 }
 
 export async function updateSupplierAction(updatedSupplier: Supplier): Promise<void> {
+  await verifyUserRole(['Administrador', 'Gerente']);
   const { id, ...data } = updatedSupplier;
   await prisma.supplier.update({
     where: { id },
@@ -1066,22 +1242,25 @@ export async function updateSupplierAction(updatedSupplier: Supplier): Promise<v
 }
 
 export async function deleteSupplierAction(supplierId: string): Promise<void> {
+  await verifyUserRole(['Administrador', 'Gerente']);
   await prisma.supplier.delete({ where: { id: supplierId } });
 }
 
 export async function updateCancellationPasswordAction(newPassword: string): Promise<void> {
+  const user = await verifyUserRole(['Administrador']);
   await prisma.systemConfig.upsert({
     where: { key: 'config' },
     update: { value: { cancellationPassword: newPassword } },
     create: { key: 'config', value: { cancellationPassword: newPassword } },
   });
+  await logAuditEvent('Alterar Senha de Cancelamento', `Senha de cancelamento de vendas alterada por ${user.name}`);
 }
 
 // Accounts Payable
 export async function addPayableAction(
-  payableData: Omit<AccountsPayable, 'id' | 'status' | 'registeredBy' | 'paymentDate' | 'dateCreated'>,
-  user: { uid: string; name: string }
+  payableData: Omit<AccountsPayable, 'id' | 'status' | 'registeredBy' | 'paymentDate' | 'dateCreated'>
 ): Promise<void> {
+  const user = await verifyUserRole(['Administrador', 'Gerente']);
   await prisma.accountsPayable.create({
     data: {
       description: payableData.description,
@@ -1092,6 +1271,7 @@ export async function addPayableAction(
       supplierName: payableData.supplierName || null,
       registeredByUid: user.uid,
       registeredByName: user.name,
+      storeId: user.storeId,
     }
   });
 }
@@ -1100,6 +1280,7 @@ export async function updatePayableAction(
   payableId: string,
   data: Omit<AccountsPayable, 'id' | 'status' | 'registeredBy' | 'paymentDate' | 'dateCreated'>
 ): Promise<void> {
+  await verifyUserRole(['Administrador', 'Gerente']);
   await prisma.accountsPayable.update({
     where: { id: payableId },
     data: {
@@ -1113,15 +1294,16 @@ export async function updatePayableAction(
 }
 
 export async function deletePayableAction(payableId: string): Promise<void> {
+  await verifyUserRole(['Administrador', 'Gerente']);
   await prisma.accountsPayable.delete({ where: { id: payableId } });
 }
 
 export async function markPayableAsPaidAction(
   payableId: string,
   fromCashRegister: boolean,
-  activeSessionId: string | null,
-  user: { uid: string; name: string }
+  activeSessionId: string | null
 ): Promise<void> {
+  const user = await verifyUserRole(['Administrador', 'Gerente']);
   await prisma.$transaction(async (tx) => {
     const payable = await tx.accountsPayable.findUnique({ where: { id: payableId } });
     if (!payable) throw new Error("Conta a pagar não encontrada.");
@@ -1137,6 +1319,7 @@ export async function markPayableAsPaidAction(
           description: `Pagamento: ${payable.description}`,
           registeredByUid: user.uid,
           registeredByName: user.name,
+          storeId: user.storeId,
         }
       });
 
@@ -1162,9 +1345,9 @@ export async function markPayableAsPaidAction(
 
 // Purchase Orders
 export async function addPurchaseOrderAction(
-  orderData: Omit<PurchaseOrder, 'id' | 'dateCreated' | 'status' | 'registeredBy'>,
-  user: { uid: string; name: string }
+  orderData: Omit<PurchaseOrder, 'id' | 'dateCreated' | 'status' | 'registeredBy'>
 ): Promise<string> {
+  const user = await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
   const newOrder = await prisma.purchaseOrder.create({
     data: {
       supplierId: orderData.supplierId,
@@ -1176,6 +1359,7 @@ export async function addPurchaseOrderAction(
       registeredByUid: user.uid,
       registeredByName: user.name,
       notes: orderData.notes || null,
+      storeId: user.storeId,
     }
   });
   return newOrder.id;
@@ -1185,6 +1369,7 @@ export async function updatePurchaseOrderAction(
   orderId: string,
   orderData: Omit<PurchaseOrder, 'id' | 'dateCreated' | 'status' | 'registeredBy' | 'items' | 'totalCost'> & { items: any; totalCost: any }
 ): Promise<void> {
+  await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
   await prisma.purchaseOrder.update({
     where: { id: orderId },
     data: {
@@ -1200,9 +1385,9 @@ export async function updatePurchaseOrderAction(
 
 export async function receivePurchaseOrderAction(
   orderId: string,
-  receivedItems: { productId: string; productName: string; quantityReceived: number; cost: number }[],
-  user: { uid: string; name: string }
+  receivedItems: { productId: string; productName: string; quantityReceived: number; cost: number }[]
 ): Promise<void> {
+  const user = await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
   await prisma.$transaction(async (tx) => {
     // --- 1. READ PHASE ---
     const order = await tx.purchaseOrder.findUnique({ where: { id: orderId } });
@@ -1296,7 +1481,76 @@ export async function receivePurchaseOrderAction(
         registeredByUid: user.uid,
         registeredByName: user.name,
         purchaseOrderId: orderId,
+        storeId: user.storeId,
       }
     });
   });
+}
+
+export async function logAuditEvent(action: string, details: string): Promise<void> {
+  try {
+    const user = await getAuthenticatedUser();
+    await prisma.auditLog.create({
+      data: {
+        action,
+        details,
+        userUid: user.uid,
+        userName: user.name,
+        storeId: user.storeId,
+      }
+    });
+  } catch (err) {
+    console.error("Failed to log audit event:", err);
+  }
+}
+
+export async function getAuditLogsAction() {
+  const user = await verifyUserRole(['Administrador', 'Gerente']);
+  return await prisma.auditLog.findMany({
+    where: { storeId: user.storeId },
+    orderBy: { date: 'desc' },
+  });
+}
+
+export async function sendWhatsAppBillingAction(customerId: string): Promise<{ success: boolean; message: string; whatsappUrl?: string }> {
+  const user = await verifyUserRole(['Administrador', 'Gerente']);
+  const customer = await prisma.customer.findUnique({ where: { id: customerId } });
+  if (!customer) throw new Error("Cliente não encontrado.");
+
+  const balance = customer.balance || 0;
+  if (balance <= 0) {
+    return { success: false, message: "Este cliente não possui saldo devedor pendente." };
+  }
+
+  const formattedPhone = customer.phone.replace(/\D/g, '');
+  const messageText = `Olá *${customer.name}*, você possui um saldo pendente de *R$ ${balance.toFixed(2)}* na Alvorada Smart Market. Para facilitar, você pode efetuar o pagamento via Pix utilizando a nossa chave comercial. Obrigado!`;
+  const whatsappUrl = `https://wa.me/55${formattedPhone}?text=${encodeURIComponent(messageText)}`;
+
+  await logAuditEvent('Cobrança WhatsApp Enviada', `Disparo de cobrança simulado para ${customer.name} (${customer.phone}) no valor de R$ ${balance.toFixed(2)} por ${user.name}`);
+
+  return {
+    success: true,
+    message: `Mensagem gerada com sucesso para ${customer.name}!`,
+    whatsappUrl,
+  };
+}
+
+export async function generatePixPaymentAction(amount: number, customerId?: string): Promise<{ qrCodeData: string; copyPasteKey: string; paymentId: string }> {
+  const user = await getAuthenticatedUser();
+  const paymentId = `mp-pix-${Math.random().toString(36).substr(2, 9)}`;
+
+  const qrCodeData = `00020101021226870014br.gov.bcb.pix2565mp-pix-${paymentId}@mercadopago.com.br5204000053039865406${amount.toFixed(2)}5802BR5915AlvoradaMarket6009SaoPaulo62070503***6304`;
+  const copyPasteKey = qrCodeData;
+
+  await logAuditEvent('Simulação Pix MP Gerada', `Pix simulado gerado no valor de R$ ${amount.toFixed(2)} (ID: ${paymentId}) por ${user.name}`);
+
+  return {
+    qrCodeData,
+    copyPasteKey,
+    paymentId,
+  };
+}
+
+export async function checkPixStatusAction(paymentId: string): Promise<{ status: 'PENDING' | 'APPROVED' }> {
+  return { status: 'APPROVED' };
 }

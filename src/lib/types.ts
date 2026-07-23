@@ -33,7 +33,7 @@ export type Sale = {
   customerId: string;
   customerName: string;
   paymentMethods: Array<{
-    method: 'Dinheiro' | 'Pix' | 'Cartão' | 'Fiado';
+    method: 'Dinheiro' | 'Pix' | 'Cartão' | 'Fiado' | 'Pontos';
     amount: number;
   }>;
   cashRegisterSessionId?: string;
@@ -55,6 +55,7 @@ export type Customer = {
   balance: number;
   notes?: string;
   tags?: string[];
+  loyaltyPoints?: number;
 };
 
 export type Supplier = {
@@ -71,6 +72,7 @@ export type User = {
   email: string;
   role: 'Administrador' | 'Gerente' | 'Operador de Caixa' | 'Estoquista';
   avatarUrl?: string;
+  storeId?: string;
 };
 
 export type SystemSettings = {

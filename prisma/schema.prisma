@@ -7,6 +7,30 @@ generator client {
   provider = "prisma-client-js"
 }
 
+model Store {
+  id        String   @id @default(uuid())
+  name      String
+  cnpj      String?
+  address   String?
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users                 User[]
+  products              Product[]
+  suppliers             Supplier[]
+  customers             Customer[]
+  sales                 Sale[]
+  cashSessions          CashRegisterSession[]
+  cashTransactions      CashTransaction[]
+  stockAdjustmentLogs   StockAdjustmentLog[]
+  stockEntryLogs        StockEntryLog[]
+  productChangeLogs     ProductChangeLog[]
+  accountsPayable       AccountsPayable[]
+  purchaseOrders        PurchaseOrder[]
+  auditLogs             AuditLog[]
+}
+
 model User {
   uid          String   @id
   name         String
@@ -16,6 +40,8 @@ model User {
   avatarUrl    String?  @db.VarChar(500)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  storeId      String?
+  store        Store?   @relation(fields: [storeId], references: [id])
 }
 
 model SystemConfig {
@@ -40,6 +66,8 @@ model Product {
   imageUrl    String?  @db.VarChar(500)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  storeId     String?
+  store       Store?   @relation(fields: [storeId], references: [id])
 }
 
 model Supplier {
@@ -50,19 +78,24 @@ model Supplier {
   email       String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  storeId     String?
+  store       Store?   @relation(fields: [storeId], references: [id])
 }
 
 model Customer {
-  id          String   @id @default(uuid())
-  name        String
-  phone       String
-  email       String?
-  creditLimit Float
-  balance     Float
-  notes       String?  @db.Text
-  tags        Json     // string[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(uuid())
+  name          String
+  phone         String
+  email         String?
+  creditLimit   Float
+  balance       Float
+  notes         String?  @db.Text
+  tags          Json     // string[]
+  loyaltyPoints Float    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  storeId       String?
+  store         Store?   @relation(fields: [storeId], references: [id])
 }
 
 model Sale {
@@ -81,6 +114,8 @@ model Sale {
   cancelledByUid        String?
   cancelledByName       String?
   cancellationDate      DateTime?
+  storeId               String?
+  store                 Store?    @relation(fields: [storeId], references: [id])
 }
 
 model CashRegisterSession {
@@ -102,83 +137,108 @@ model CashRegisterSession {
   closedByName           String?
   correction             Json?     // { date: string, user: { uid: string, name: string }, oldValue: number, newValue: number }
   openingCorrection      Json?     // { date: string, user: { uid: string, name: string }, oldValue: number, newValue: number }
+  storeId                String?
+  store                  Store?    @relation(fields: [storeId], references: [id])
 }
 
 model CashTransaction {
-  id              String   @id @default(uuid())
-  sessionId       String
-  type            String   // 'Despesa' | 'Sangria' | 'Recebimento Fiado'
-  amount          Float
-  description     String
-  date            DateTime @default(now())
-  registeredByUid String
+  id               String   @id @default(uuid())
+  sessionId        String
+  type             String   // 'Despesa' | 'Sangria' | 'Recebimento Fiado'
+  amount           Float
+  description      String
+  date             DateTime @default(now())
+  registeredByUid  String
   registeredByName String
-  customerId     String?
-  customerName   String?
+  customerId       String?
+  customerName     String?
+  storeId          String?
+  store            Store?   @relation(fields: [storeId], references: [id])
 }
 
 model StockAdjustmentLog {
-  id              String   @id @default(uuid())
-  productId       String
-  productName     String
-  adjustedByUid   String
-  adjustedByName  String
-  date            DateTime @default(now())
-  oldQuantity     Float
-  newQuantity     Float
-  reason          String   // 'Perda' | 'Avaria' | 'Contagem' | 'Doação' | 'Outro'
-  notes           String?  @db.Text
+  id             String   @id @default(uuid())
+  productId      String
+  productName    String
+  adjustedByUid  String
+  adjustedByName String
+  date           DateTime @default(now())
+  oldQuantity    Float
+  newQuantity    Float
+  reason         String   // 'Perda' | 'Avaria' | 'Contagem' | 'Doação' | 'Outro'
+  notes          String?  @db.Text
+  storeId        String?
+  store          Store?   @relation(fields: [storeId], references: [id])
 }
 
 model StockEntryLog {
-  id              String   @id @default(uuid())
-  date            DateTime @default(now())
-  supplierId      String
-  supplierName    String
-  items           Json     // Array<{ productId: string, productName: string, quantity: number, cost: number }>
-  totalCost       Float
-  totalItems      Float
-  registeredByUid String
+  id               String   @id @default(uuid())
+  date             DateTime @default(now())
+  supplierId       String
+  supplierName     String
+  items            Json     // Array<{ productId: string, productName: string, quantity: number, cost: number }>
+  totalCost        Float
+  totalItems       Float
+  registeredByUid  String
   registeredByName String
-  purchaseOrderId String?
+  purchaseOrderId  String?
+  storeId          String?
+  store            Store?   @relation(fields: [storeId], references: [id])
 }
 
 model ProductChangeLog {
-  id              String   @id @default(uuid())
-  date            DateTime @default(now())
-  productId       String
-  productName     String
-  changedByUid    String
-  changedByName   String
-  changes         Json     // Array<{ field: string, oldValue: any, newValue: any }>
+  id             String   @id @default(uuid())
+  date           DateTime @default(now())
+  productId      String
+  productName    String
+  changedByUid   String
+  changedByName  String
+  changes        Json     // Array<{ field: string, oldValue: any, newValue: any }>
+  storeId        String?
+  store          Store?   @relation(fields: [storeId], references: [id])
 }
 
 model AccountsPayable {
-  id              String    @id @default(uuid())
-  description     String
-  amount          Float
-  dateCreated     DateTime  @default(now())
-  dueDate         DateTime
-  paymentDate     DateTime?
-  status          String    // 'Pendente' | 'Pago' | 'Vencido'
-  supplierId      String?
-  supplierName    String?
-  registeredByUid String
+  id               String    @id @default(uuid())
+  description      String
+  amount           Float
+  dateCreated      DateTime  @default(now())
+  dueDate          DateTime
+  paymentDate      DateTime?
+  status           String    // 'Pendente' | 'Pago' | 'Vencido'
+  supplierId       String?
+  supplierName     String?
+  registeredByUid  String
   registeredByName String
-  cashSessionId   String?
+  cashSessionId    String?
+  storeId          String?
+  store            Store?    @relation(fields: [storeId], references: [id])
 }
 
 model PurchaseOrder {
-  id              String    @id @default(uuid())
-  supplierId      String
-  supplierName    String
-  dateCreated     DateTime  @default(now())
-  dateExpected    DateTime
-  dateReceived    DateTime?
-  status          String    // 'Pendente' | 'Recebido Parcialmente' | 'Recebido' | 'Cancelado'
-  items           Json      // Array<{ productId: string, productName: string, quantityOrdered: number, cost: number, quantityReceived: number }>
-  totalCost       Float
-  registeredByUid String
+  id               String    @id @default(uuid())
+  supplierId       String
+  supplierName     String
+  dateCreated      DateTime  @default(now())
+  dateExpected     DateTime
+  dateReceived     DateTime?
+  status           String    // 'Pendente' | 'Recebido Parcialmente' | 'Recebido' | 'Cancelado'
+  items            Json      // Array<{ productId: string, productName: string, quantityOrdered: number, cost: number, quantityReceived: number }>
+  totalCost        Float
+  registeredByUid  String
   registeredByName String
-  notes           String?   @db.Text
+  notes            String?   @db.Text
+  storeId          String?
+  store            Store?    @relation(fields: [storeId], references: [id])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  date      DateTime @default(now())
+  action    String
+  details   String   @db.Text
+  userUid   String
+  userName  String
+  storeId   String?
+  store     Store?   @relation(fields: [storeId], references: [id])
 }
