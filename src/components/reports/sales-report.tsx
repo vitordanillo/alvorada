@@ -89,7 +89,7 @@ export function SalesReportClient() {
             
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 {statCards.map((card) => (
-                    <StatCard key={card.title} {...card} change="" changeType="increase" />
+                    <StatCard key={card.title} {...card} />
                 ))}
             </div>
 

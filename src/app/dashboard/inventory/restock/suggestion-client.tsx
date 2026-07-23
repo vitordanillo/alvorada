@@ -10,7 +10,7 @@ import { useAppContext } from '@/context/app-context';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export function SuggestionClient() {
-  const { products, loading: appContextLoading } = useAppContext();
+  const { products, sales, loading: appContextLoading } = useAppContext();
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<SuggestRestockOutput | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,21 +32,38 @@ export function SuggestionClient() {
     }
 
     try {
+      const activeSales = sales.filter(s => s.status === 'Concluída');
+      const last7Days = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        return d.toISOString().split('T')[0];
+      }).reverse();
+
       const input = {
-        products: products.map(p => ({
-          productId: p.id,
-          productName: p.name,
-          // NOTE: Usando dados de vendas de exemplo para a IA por enquanto.
-          // A integração com dados de vendas reais será um próximo passo.
-          salesData: [ 
-            { date: '2024-07-20', quantitySold: Math.floor(Math.random() * 5) + 1 },
-            { date: '2024-07-21', quantitySold: Math.floor(Math.random() * 5) + 1 },
-            { date: '2024-07-22', quantitySold: Math.floor(Math.random() * 5) + 1 },
-          ],
-          currentStock: p.stock,
-          minimumStock: p.minStock,
-          unit: p.unit,
-        }))
+        products: products.map(p => {
+          const salesData = last7Days.map(dateStr => {
+            let quantitySold = 0;
+            activeSales.forEach(sale => {
+              const saleDateStr = new Date(sale.date).toISOString().split('T')[0];
+              if (saleDateStr === dateStr) {
+                const item = sale.items.find(item => item.productId === p.id);
+                if (item) {
+                  quantitySold += item.quantity;
+                }
+              }
+            });
+            return { date: dateStr, quantitySold };
+          });
+
+          return {
+            productId: p.id,
+            productName: p.name,
+            salesData,
+            currentStock: p.stock,
+            minimumStock: p.minStock,
+            unit: p.unit,
+          };
+        })
       };
       const result = await suggestRestock(input);
       setSuggestions(result);
@@ -58,11 +75,11 @@ export function SuggestionClient() {
     }
   };
 
-  if (!isClient || appContextLoading.products) {
+  if (!isClient || appContextLoading.products || appContextLoading.sales) {
     return (
-        <Card className="rounded-2xl border-none shadow-sm bg-card p-6">
-            <div className="space-y-4">
-              <Skeleton className="h-12 w-1/3" />
+      <Card className="rounded-2xl border-none shadow-sm bg-card p-6">
+        <div className="space-y-4">
+          <Skeleton className="h-12 w-1/3" />
               <Skeleton className="h-8 w-full" />
               <Skeleton className="h-8 w-full" />
             </div>

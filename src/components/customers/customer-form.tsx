@@ -40,10 +40,14 @@ interface CustomerFormProps {
 export function CustomerForm({ customer, onSubmit, onCancel }: CustomerFormProps) {
   const form = useForm<CustomerFormData>({
     resolver: zodResolver(customerSchema),
-    defaultValues: {
-      ...customer,
-      tags: customer?.tags?.join(', ') || '',
-    } || {
+    defaultValues: customer ? {
+      name: customer.name || '',
+      phone: customer.phone || '',
+      email: customer.email || '',
+      creditLimit: customer.creditLimit || 0,
+      notes: customer.notes || '',
+      tags: customer.tags?.join(', ') || '',
+    } : {
       name: '',
       phone: '',
       email: '',

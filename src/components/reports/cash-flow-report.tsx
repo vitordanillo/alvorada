@@ -87,7 +87,7 @@ export function CashFlowReportClient() {
             
             <div className="grid gap-4 md:grid-cols-3">
                 {statCards.map((card) => (
-                    <StatCard key={card.title} {...card} change="" changeType="increase" />
+                    <StatCard key={card.title} {...card} />
                 ))}
             </div>
 

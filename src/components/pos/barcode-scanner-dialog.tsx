@@ -84,7 +84,7 @@ export function BarcodeScannerDialog({ open, onOpenChange, onScanSuccess }: Barc
 
     // This is the cleanup function for the effect. It runs when `open` becomes false.
     return () => {
-      if (html5QrcodeScanner && html5QrcodeScanner.isScanning) {
+      if (html5QrcodeScanner) {
          html5QrcodeScanner.clear().catch(err => {
             console.error("Failed to clear scanner on unmount:", err);
          });

@@ -99,6 +99,13 @@ export function PurchaseOrderForm({ existingOrder }: PurchaseOrderFormProps) {
         dateExpected: data.dateExpected.toISOString(),
         supplierName: supplier.name,
         totalCost: totalCost,
+        items: data.items.map(item => ({
+          productId: item.productId,
+          productName: item.productName,
+          cost: item.cost,
+          quantityOrdered: item.quantityOrdered,
+          quantityReceived: (item as any).quantityReceived || 0,
+        })),
       };
 
       if (existingOrder) {
