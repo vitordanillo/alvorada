@@ -31,9 +31,10 @@ interface CustomerTableProps {
   onEdit: (customer: Customer) => void;
   onDelete: (customer: Customer) => void;
   onRegisterPayment: (customer: Customer) => void;
+  onSendWhatsApp?: (customer: Customer) => void;
 }
 
-export function CustomerTable({ customers, onEdit, onDelete, onRegisterPayment }: CustomerTableProps) {
+export function CustomerTable({ customers, onEdit, onDelete, onRegisterPayment, onSendWhatsApp }: CustomerTableProps) {
   const getCreditStatus = (balance: number, creditLimit: number) => {
     if (creditLimit === 0) {
       return { text: 'Sem Crédito', variant: 'outline' as const, className: '' };
@@ -55,6 +56,7 @@ export function CustomerTable({ customers, onEdit, onDelete, onRegisterPayment }
             <TableRow>
               <TableHead>Nome</TableHead>
               <TableHead className="hidden md:table-cell">Telefone</TableHead>
+              <TableHead>Pontos de Fidelidade</TableHead>
               <TableHead>Situação do Crédito</TableHead>
               <TableHead className="text-right">Crédito (Usado / Limite)</TableHead>
               <TableHead>
@@ -78,6 +80,11 @@ export function CustomerTable({ customers, onEdit, onDelete, onRegisterPayment }
                 </TableCell>
                 <TableCell className="hidden md:table-cell">{customer.phone}</TableCell>
                 <TableCell>
+                  <span className="inline-flex items-center gap-1 font-semibold text-sm text-pink-600 bg-pink-50 px-2.5 py-0.5 rounded-full border border-pink-200">
+                    {customer.loyaltyPoints || 0} pts
+                  </span>
+                </TableCell>
+                <TableCell>
                   <Badge variant={creditStatus.variant} className={creditStatus.className}>
                     {creditStatus.text}
                   </Badge>
@@ -98,6 +105,11 @@ export function CustomerTable({ customers, onEdit, onDelete, onRegisterPayment }
                       <DropdownMenuItem onClick={() => onRegisterPayment(customer)} disabled={customer.balance <= 0}>
                         Registrar Pagamento
                       </DropdownMenuItem>
+                      {customer.balance > 0 && onSendWhatsApp && (
+                        <DropdownMenuItem onClick={() => onSendWhatsApp(customer)}>
+                          Cobrar via WhatsApp
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem asChild>
                         <Link href={`/dashboard/customers/${customer.id}`}>Ver Histórico</Link>
                       </DropdownMenuItem>

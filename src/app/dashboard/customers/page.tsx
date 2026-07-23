@@ -140,6 +140,26 @@ export default function CustomersPage() {
     }
   };
 
+  const handleSendWhatsApp = async (customer: Customer) => {
+    try {
+      const { sendWhatsAppBillingAction } = await import('@/lib/db-actions');
+      const result = await sendWhatsAppBillingAction(customer.id);
+      if (result.success && result.whatsappUrl) {
+        toast({
+          title: "Cobrança WhatsApp",
+          description: result.message,
+          className: "bg-green-100 border-green-500 text-green-800"
+        });
+        window.open(result.whatsappUrl, '_blank');
+      } else {
+        toast({ variant: "destructive", title: "Erro", description: result.message });
+      }
+    } catch (error) {
+      console.error("Failed to send WhatsApp billing:", error);
+      toast({ variant: "destructive", title: "Erro", description: "Não foi possível disparar o WhatsApp de cobrança." });
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
        <PageHeader title="Clientes" description="Gerencie sua base de clientes.">
@@ -170,7 +190,13 @@ export default function CustomersPage() {
           </div>
         </Card>
       ) : (
-        <CustomerTable customers={customers} onEdit={handleEditCustomer} onDelete={handleDeleteCustomer} onRegisterPayment={handleRegisterPayment} />
+        <CustomerTable 
+          customers={customers} 
+          onEdit={handleEditCustomer} 
+          onDelete={handleDeleteCustomer} 
+          onRegisterPayment={handleRegisterPayment} 
+          onSendWhatsApp={handleSendWhatsApp}
+        />
       )}
 
       {customerToPay && (

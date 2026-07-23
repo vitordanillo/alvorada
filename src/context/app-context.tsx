@@ -37,6 +37,9 @@ import {
   addPurchaseOrderAction,
   updatePurchaseOrderAction,
   receivePurchaseOrderAction,
+  loginUserAction,
+  registerUserAction,
+  logoutUserAction,
 } from '@/lib/db-actions';
 
 interface AppContextType {
@@ -146,7 +149,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const refreshData = async () => {
     if (!user) return;
     try {
-      const data = await getInitialDataAction(user.role);
+      const data = await getInitialDataAction();
       setProducts(data.products);
       setCustomers(data.customers);
       setSales(data.sales);
@@ -159,6 +162,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setProductChangeLogs(data.productChangeLogs);
       setAccountsPayable(data.accountsPayable);
       setPurchaseOrders(data.purchaseOrders);
+
+      // Save to IndexedDB local cache for offline usage
+      import('@/lib/offline-db').then((db) => {
+        db.saveToCache('products', data.products);
+        db.saveToCache('customers', data.customers);
+        db.saveToCache('sales', data.sales);
+        db.saveToCache('suppliers', data.suppliers);
+        db.saveToCache('cashSessions', data.cashSessions);
+        db.saveToCache('stockAdjustmentLogs', data.stockAdjustmentLogs);
+        db.saveToCache('allUsers', data.allUsers);
+        db.saveToCache('systemSettings', data.systemSettings);
+        db.saveToCache('stockEntryLogs', data.stockEntryLogs);
+        db.saveToCache('productChangeLogs', data.productChangeLogs);
+        db.saveToCache('accountsPayable', data.accountsPayable);
+        db.saveToCache('purchaseOrders', data.purchaseOrders);
+      }).catch(err => console.error("Cache import error:", err));
 
       setLoading(prev => ({
         ...prev,
@@ -176,11 +195,87 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         purchaseOrders: false,
       }));
     } catch (error) {
-      console.error("Error refreshing data:", error);
+      console.warn("Could not fetch data online. Trying offline cache...", error);
+      // Attempt load from IndexedDB cache
+      try {
+        const db = await import('@/lib/offline-db');
+        const cachedProducts = await db.getFromCache<Product[]>('products') || [];
+        const cachedCustomers = await db.getFromCache<Customer[]>('customers') || [];
+        const cachedSales = await db.getFromCache<Sale[]>('sales') || [];
+        const cachedSuppliers = await db.getFromCache<Supplier[]>('suppliers') || [];
+        const cachedCashSessions = await db.getFromCache<CashRegisterSession[]>('cashSessions') || [];
+        const cachedLogs = await db.getFromCache<StockAdjustmentLog[]>('stockAdjustmentLogs') || [];
+        const cachedUsers = await db.getFromCache<User[]>('allUsers') || [];
+        const cachedSettings = await db.getFromCache<SystemSettings>('systemSettings');
+        const cachedStockEntryLogs = await db.getFromCache<StockEntryLog[]>('stockEntryLogs') || [];
+        const cachedProductChangeLogs = await db.getFromCache<ProductChangeLog[]>('productChangeLogs') || [];
+        const cachedPayable = await db.getFromCache<AccountsPayable[]>('accountsPayable') || [];
+        const cachedOrders = await db.getFromCache<PurchaseOrder[]>('purchaseOrders') || [];
+
+        setProducts(cachedProducts);
+        setCustomers(cachedCustomers);
+        setSales(cachedSales);
+        setSuppliers(cachedSuppliers);
+        setCashSessions(cachedCashSessions);
+        setStockAdjustmentLogs(cachedLogs);
+        setAllUsers(cachedUsers);
+        setSystemSettings(cachedSettings);
+        setStockEntryLogs(cachedStockEntryLogs);
+        setProductChangeLogs(cachedProductChangeLogs);
+        setAccountsPayable(cachedPayable);
+        setPurchaseOrders(cachedOrders);
+
+        setLoading(prev => ({
+          ...prev,
+          products: false,
+          customers: false,
+          sales: false,
+          suppliers: false,
+          cashSessions: false,
+          stockAdjustmentLogs: false,
+          stockEntryLogs: false,
+          productChangeLogs: false,
+          allUsers: false,
+          systemSettings: false,
+          accountsPayable: false,
+          purchaseOrders: false,
+        }));
+      } catch (dbErr) {
+        console.error("Offline cache resolution failed:", dbErr);
+      }
     }
   };
 
-  // On mount: Check auth session
+  // Synchronize offline sales queue
+  const syncOfflineSales = async () => {
+    try {
+      const db = await import('@/lib/offline-db');
+      const queued = await db.getQueuedSales();
+      if (queued.length === 0) return;
+
+      console.log(`Syncing ${queued.length} offline sales...`);
+      let successCount = 0;
+
+      for (const item of queued) {
+        try {
+          await addSaleAction(item.saleData, item.activeSessionId);
+          await db.removeQueuedSale(item.id);
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to sync queued sale ${item.id}:`, err);
+        }
+      }
+
+      if (successCount > 0) {
+        await refreshData();
+        console.log(`Successfully synced ${successCount} offline sales!`);
+      }
+    } catch (err) {
+      console.error("Failed to sync offline sales queue:", err);
+    }
+  };
+
+  // On mount: Check auth session and sync offline sales
   useEffect(() => {
     getCurrentUserAction()
       .then((currentUser) => {
@@ -194,6 +289,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         setLoadingAuth(false);
       });
   }, []);
+
+  // Sync listener when online
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', syncOfflineSales);
+      if (navigator.onLine && user) {
+        syncOfflineSales();
+      }
+      return () => {
+        window.removeEventListener('online', syncOfflineSales);
+      };
+    }
+  }, [user]);
 
   // On user change: Load or clear database listings
   useEffect(() => {
@@ -248,8 +356,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const updateProduct = async (updatedProductData: Product) => {
-    if (!user) throw new Error("Usuário não autenticado.");
-    await updateProductAction(updatedProductData, { uid: user.uid, name: user.name });
+    await updateProductAction(updatedProductData);
     await refreshData();
   };
   
@@ -259,14 +366,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const addStockToProducts = async (items: { productId: string, quantity: number, cost: number }[], supplier: { id: string, name: string }) => {
-    if (!user) throw new Error("Usuário não autenticado.");
-    await addStockToProductsAction(items, supplier, { uid: user.uid, name: user.name });
+    await addStockToProductsAction(items, supplier);
     await refreshData();
   };
 
   const adjustStock = async (productId: string, newQuantity: number, reason: StockAdjustmentLog['reason'], notes?: string) => {
-    if (!user) throw new Error("Usuário não autenticado.");
-    await adjustStockAction(productId, newQuantity, reason, notes || '', { uid: user.uid, name: user.name });
+    await adjustStockAction(productId, newQuantity, reason, notes || '');
     await refreshData();
   };
 
@@ -287,9 +392,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const addCreditPayment = async (customerId: string, amount: number): Promise<CashTransaction> => {
     if (!activeSession) throw new Error("Não há um caixa aberto. Impossível registrar o pagamento.");
-    if (!user) throw new Error("Usuário não autenticado.");
 
-    const transaction = await addCreditPaymentAction(customerId, amount, activeSession.id, { uid: user.uid, name: user.name });
+    const transaction = await addCreditPaymentAction(customerId, amount, activeSession.id);
     await refreshData();
     
     // Refresh cash transactions list
@@ -301,21 +405,88 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const addSale = async (saleData: Omit<Sale, 'id' | 'date' | 'status'>): Promise<Sale> => {
     if (!activeSession) throw new Error("Não há um caixa aberto. Impossível registrar a venda.");
-    if (!user) throw new Error("Usuário não autenticado.");
 
-    const sale = await addSaleAction(saleData, activeSession.id, { uid: user.uid, name: user.name });
-    await refreshData();
+    try {
+      const sale = await addSaleAction(saleData, activeSession.id);
+      await refreshData();
 
-    // Refresh cash transactions list
-    const trans = await getCashTransactionsAction(activeSession.id);
-    setCashTransactions(trans);
+      // Refresh cash transactions list
+      const trans = await getCashTransactionsAction(activeSession.id);
+      setCashTransactions(trans);
 
-    return sale;
+      return sale;
+    } catch (error) {
+      console.warn("Failed to send sale to server, checking offline fallback...", error);
+      if (typeof window !== 'undefined' && !navigator.onLine) {
+        const db = await import('@/lib/offline-db');
+        const tempId = `off-${Math.random().toString(36).substr(2, 9)}`;
+        const localSale: Sale = {
+          id: tempId,
+          date: new Date().toISOString(),
+          items: saleData.items,
+          total: saleData.total,
+          customerId: saleData.customerId,
+          customerName: saleData.customerName,
+          paymentMethods: saleData.paymentMethods,
+          status: 'Concluída',
+          cashRegisterSessionId: activeSession.id,
+        };
+
+        // Save queued sale
+        await db.queueOfflineSale({
+          id: tempId,
+          saleData,
+          activeSessionId: activeSession.id,
+          createdAt: new Date().toISOString(),
+        });
+
+        // Optimistically deduct stock locally
+        setProducts(prevProducts => {
+          const updated = prevProducts.map(p => {
+            const item = saleData.items.find(i => i.productId === p.id);
+            if (item) {
+              return { ...p, stock: Math.max(0, p.stock - item.quantity) };
+            }
+            return p;
+          });
+          db.saveToCache('products', updated);
+          return updated;
+        });
+
+        // Update local customer points/balance
+        if (saleData.customerId !== 'default') {
+          setCustomers(prevCustomers => {
+            const updated = prevCustomers.map(c => {
+              if (c.id === saleData.customerId) {
+                let fiadoAmount = 0;
+                let pointsUsed = 0;
+                for (const pm of saleData.paymentMethods) {
+                  if (pm.method === 'Fiado') fiadoAmount += pm.amount;
+                  if (pm.method === 'Pontos') pointsUsed += pm.amount * 10;
+                }
+                const newBalance = c.balance + fiadoAmount;
+                const pointsEarned = Math.floor((saleData.total - pointsUsed / 10) * 0.1);
+                const newPoints = Math.max(0, (c.loyaltyPoints || 0) - pointsUsed + Math.max(0, pointsEarned));
+                return { ...c, balance: newBalance, loyaltyPoints: newPoints };
+              }
+              return c;
+            });
+            db.saveToCache('customers', updated);
+            return updated;
+          });
+        }
+
+        // Add to sales state list
+        setSales(prevSales => [localSale, ...prevSales]);
+
+        return localSale;
+      }
+      throw error;
+    }
   };
 
   const cancelSale = async (saleId: string, reason: string, passwordAttempt: string) => {
-    if (!user) throw new Error("Usuário não autenticado.");
-    await cancelSaleAction(saleId, reason, passwordAttempt, { uid: user.uid, name: user.name });
+    await cancelSaleAction(saleId, reason, passwordAttempt);
     await refreshData();
 
     if (activeSession) {
@@ -325,28 +496,24 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const openCashRegister = async (openingBalance: number) => {
-    if (!user) throw new Error("Usuário não autenticado para abrir o caixa.");
-    await openCashRegisterAction(openingBalance, { uid: user.uid, name: user.name });
+    await openCashRegisterAction(openingBalance);
     await refreshData();
   };
 
   const closeCashRegister = async (closingBalance: number) => {
     if (!activeSession) throw new Error("Nenhum caixa aberto para fechar.");
-    if (!user) throw new Error("Usuário não autenticado para fechar o caixa.");
-    await closeCashRegisterAction(activeSession.id, closingBalance, { uid: user.uid, name: user.name });
+    await closeCashRegisterAction(activeSession.id, closingBalance);
     await refreshData();
   };
 
   const correctCashClosing = async (sessionId: string, newClosingBalance: number) => {
-    if (!user) throw new Error("Usuário não autenticado para corrigir o caixa.");
-    await correctCashClosingAction(sessionId, newClosingBalance, { uid: user.uid, name: user.name });
+    await correctCashClosingAction(sessionId, newClosingBalance);
     await refreshData();
   };
 
   const correctOpeningBalance = async (newOpeningBalance: number) => {
     if (!activeSession) throw new Error("Não há caixa ativo para corrigir.");
-    if (!user) throw new Error("Usuário não autenticado.");
-    await correctOpeningBalanceAction(activeSession.id, newOpeningBalance, { uid: user.uid, name: user.name });
+    await correctOpeningBalanceAction(activeSession.id, newOpeningBalance);
     await refreshData();
   };
 
@@ -362,8 +529,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const addCashTransaction = async (transactionData: Omit<CashTransaction, 'id' | 'date' | 'sessionId' | 'registeredBy'>) => {
     if (!activeSession) throw new Error("Nenhum caixa ativo.");
-    if (!user) throw new Error("Usuário não autenticado.");
-    await addCashTransactionAction(transactionData, activeSession.id, { uid: user.uid, name: user.name });
+    await addCashTransactionAction(transactionData, activeSession.id);
     await refreshData();
 
     const trans = await getCashTransactionsAction(activeSession.id);
@@ -396,8 +562,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const addPayable = async (payableData: Omit<AccountsPayable, 'id' | 'status' | 'registeredBy' | 'paymentDate' | 'dateCreated'>) => {
-    if (!user) throw new Error("Usuário não autenticado.");
-    await addPayableAction(payableData, { uid: user.uid, name: user.name });
+    await addPayableAction(payableData);
     await refreshData();
   };
 
@@ -412,8 +577,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const markPayableAsPaid = async (payableId: string, fromCashRegister: boolean) => {
-    if (!user) throw new Error("Usuário não autenticado.");
-    await markPayableAsPaidAction(payableId, fromCashRegister, activeSession ? activeSession.id : null, { uid: user.uid, name: user.name });
+    await markPayableAsPaidAction(payableId, fromCashRegister, activeSession ? activeSession.id : null);
     await refreshData();
 
     if (activeSession && fromCashRegister) {
@@ -423,8 +587,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const addPurchaseOrder = async (orderData: Omit<PurchaseOrder, 'id' | 'dateCreated' | 'status' | 'registeredBy'>) => {
-    if (!user) throw new Error("Usuário não autenticado.");
-    const orderId = await addPurchaseOrderAction(orderData, { uid: user.uid, name: user.name });
+    const orderId = await addPurchaseOrderAction(orderData);
     await refreshData();
     return orderId;
   };
@@ -435,8 +598,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const receivePurchaseOrder = async (orderId: string, receivedItems: { productId: string, productName: string, quantityReceived: number, cost: number }[]) => {
-    if (!user) throw new Error("Usuário não autenticado.");
-    await receivePurchaseOrderAction(orderId, receivedItems, { uid: user.uid, name: user.name });
+    await receivePurchaseOrderAction(orderId, receivedItems);
     await refreshData();
   };
 
