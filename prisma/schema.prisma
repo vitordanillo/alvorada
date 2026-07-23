@@ -1,0 +1,184 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  uid          String   @id
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String   // 'Administrador' | 'Gerente' | 'Operador de Caixa' | 'Estoquista'
+  avatarUrl    String?  @db.VarChar(500)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model SystemConfig {
+  key   String @id
+  value Json   // e.g. { cancellationPassword: "..." } or { seeded_v2: true }
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  sku         String   @unique
+  status      String   // 'Ativo' | 'Inativo'
+  category    String   // 'Alimentos' | 'Limpeza' | 'Higiene' | 'Bebidas' | 'Outros'
+  price       Float
+  averageCost Float
+  costHistory Json     // Array<{ date: string, quantity: number, cost: number }>
+  stock       Float
+  minStock    Float
+  unit        String
+  supplier    String
+  barcode     String?
+  imageUrl    String?  @db.VarChar(500)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Supplier {
+  id          String   @id @default(uuid())
+  name        String
+  contactName String?
+  phone       String?
+  email       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Customer {
+  id          String   @id @default(uuid())
+  name        String
+  phone       String
+  email       String?
+  creditLimit Float
+  balance     Float
+  notes       String?  @db.Text
+  tags        Json     // string[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Sale {
+  id                    String    @id @default(uuid())
+  date                  DateTime  @default(now())
+  items                 Json      // Array<{ productId: string, productName: string, quantity: number, price: number, costAtTimeOfSale?: number }>
+  total                 Float
+  totalCost             Float?
+  totalProfit           Float?
+  customerId            String
+  customerName          String
+  paymentMethods        Json      // Array<{ method: 'Dinheiro' | 'Pix' | 'Cartão' | 'Fiado', amount: number }>
+  cashRegisterSessionId String?
+  status                String    // 'Concluída' | 'Cancelada'
+  cancellationReason    String?   @db.Text
+  cancelledByUid        String?
+  cancelledByName       String?
+  cancellationDate      DateTime?
+}
+
+model CashRegisterSession {
+  id                     String    @id @default(uuid())
+  openingTime            DateTime  @default(now())
+  closingTime            DateTime?
+  openingBalance         Float
+  closingBalance         Float?
+  calculatedCashInDrawer Float
+  totalSales             Float
+  salesByPaymentMethod   Json      // { Dinheiro: number, Pix: number, Cartão: number }
+  totalExpenses          Float
+  totalWithdrawals       Float
+  totalCreditPayments    Float
+  status                 String    // 'Aberto' | 'Fechado'
+  openedByUid            String
+  openedByName           String
+  closedByUid            String?
+  closedByName           String?
+  correction             Json?     // { date: string, user: { uid: string, name: string }, oldValue: number, newValue: number }
+  openingCorrection      Json?     // { date: string, user: { uid: string, name: string }, oldValue: number, newValue: number }
+}
+
+model CashTransaction {
+  id              String   @id @default(uuid())
+  sessionId       String
+  type            String   // 'Despesa' | 'Sangria' | 'Recebimento Fiado'
+  amount          Float
+  description     String
+  date            DateTime @default(now())
+  registeredByUid String
+  registeredByName String
+  customerId     String?
+  customerName   String?
+}
+
+model StockAdjustmentLog {
+  id              String   @id @default(uuid())
+  productId       String
+  productName     String
+  adjustedByUid   String
+  adjustedByName  String
+  date            DateTime @default(now())
+  oldQuantity     Float
+  newQuantity     Float
+  reason          String   // 'Perda' | 'Avaria' | 'Contagem' | 'Doação' | 'Outro'
+  notes           String?  @db.Text
+}
+
+model StockEntryLog {
+  id              String   @id @default(uuid())
+  date            DateTime @default(now())
+  supplierId      String
+  supplierName    String
+  items           Json     // Array<{ productId: string, productName: string, quantity: number, cost: number }>
+  totalCost       Float
+  totalItems      Float
+  registeredByUid String
+  registeredByName String
+  purchaseOrderId String?
+}
+
+model ProductChangeLog {
+  id              String   @id @default(uuid())
+  date            DateTime @default(now())
+  productId       String
+  productName     String
+  changedByUid    String
+  changedByName   String
+  changes         Json     // Array<{ field: string, oldValue: any, newValue: any }>
+}
+
+model AccountsPayable {
+  id              String    @id @default(uuid())
+  description     String
+  amount          Float
+  dateCreated     DateTime  @default(now())
+  dueDate         DateTime
+  paymentDate     DateTime?
+  status          String    // 'Pendente' | 'Pago' | 'Vencido'
+  supplierId      String?
+  supplierName    String?
+  registeredByUid String
+  registeredByName String
+  cashSessionId   String?
+}
+
+model PurchaseOrder {
+  id              String    @id @default(uuid())
+  supplierId      String
+  supplierName    String
+  dateCreated     DateTime  @default(now())
+  dateExpected    DateTime
+  dateReceived    DateTime?
+  status          String    // 'Pendente' | 'Recebido Parcialmente' | 'Recebido' | 'Cancelado'
+  items           Json      // Array<{ productId: string, productName: string, quantityOrdered: number, cost: number, quantityReceived: number }>
+  totalCost       Float
+  registeredByUid String
+  registeredByName String
+  notes           String?   @db.Text
+}

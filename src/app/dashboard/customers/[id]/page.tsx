@@ -11,8 +11,7 @@ import { AlertCircle, User, Phone, Mail, CircleDollarSign, ArrowLeft, History, F
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { db } from '@/lib/firebase/config';
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { getPaymentHistoryAction } from '@/lib/db-actions';
 import type { CashTransaction, Sale } from '@/lib/types';
 import { CustomerHistoryTable, type HistoryItem } from '@/components/customers/customer-history-table';
 
@@ -33,23 +32,16 @@ export default function CustomerDetailPage() {
   React.useEffect(() => {
     if (!customerId) return;
     setLoadingHistory(true);
-    const paymentsQuery = query(
-        collection(db, 'cash-transactions'),
-        where('customerId', '==', customerId),
-        where('type', '==', 'Recebimento Fiado'),
-        orderBy('date', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(paymentsQuery, (snapshot) => {
-        const payments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as CashTransaction);
+    getPaymentHistoryAction(customerId)
+      .then((payments) => {
         setPaymentHistory(payments);
-        setLoadingHistory(false);
-    }, (error) => {
+      })
+      .catch((error) => {
         console.error("Error fetching payment history:", error);
+      })
+      .finally(() => {
         setLoadingHistory(false);
-    });
-
-    return () => unsubscribe();
+      });
   }, [customerId]);
 
 

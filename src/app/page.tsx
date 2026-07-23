@@ -3,8 +3,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { auth } from '@/lib/firebase/config';
+import { useAuth } from '@/context/app-context';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -16,6 +15,7 @@ import { Loader2, Eye, EyeOff } from 'lucide-react';
 export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { login, register } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -37,11 +37,7 @@ export default function LoginPage() {
         return;
       }
       try {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(userCredential.user, { displayName: name });
-        
-        // The onAuthStateChanged listener in app-context will handle creating the Firestore doc
-        // and updating the app state. The redirection will be handled by the layout component.
+        await register(name, email, password);
         
         toast({
           title: 'Cadastro realizado com sucesso!',
@@ -49,7 +45,7 @@ export default function LoginPage() {
         });
         router.push('/dashboard');
       } catch (err: any) {
-        if (err.code === 'auth/email-already-in-use') {
+        if (err.message && err.message.includes('em uso')) {
           setError('Este e-mail já está em uso. Tente fazer login.');
           setIsSignUp(false); // Switch to login form
           toast({
@@ -78,9 +74,7 @@ export default function LoginPage() {
       }
 
       try {
-        await signInWithEmailAndPassword(auth, email, password);
-        // The onAuthStateChanged listener in app-context will handle the state update.
-        // The redirection will be handled by the layout component.
+        await login(email, password);
         
         toast({
           title: 'Login bem-sucedido!',

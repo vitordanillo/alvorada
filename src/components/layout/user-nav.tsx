@@ -3,8 +3,6 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { signOut } from 'firebase/auth';
-import { auth } from '@/lib/firebase/config';
 import { useAuth } from '@/context/app-context';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -21,15 +19,13 @@ import { LogOut, User, Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export function UserNav() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
-      // O onAuthStateChanged listener no AppContext irá limpar o estado do usuário,
-      // e o DashboardLayout irá redirecionar para a página de login.
+      await logout();
       toast({
         title: 'Logout realizado com sucesso!',
       });
