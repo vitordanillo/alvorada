@@ -20,6 +20,8 @@ import { DateRange } from 'react-day-picker';
 import { startOfDay, endOfDay } from 'date-fns';
 import { AccountsPayableLogTable } from '@/components/logs/accounts-payable-log-table';
 import { PurchaseOrderLogTable } from '@/components/logs/purchase-order-log-table';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+
 
 export default function LogsPage() {
   const { 
@@ -43,7 +45,26 @@ export default function LogsPage() {
     return { from, to };
   });
   const [selectedUserId, setSelectedUserId] = React.useState<string>('all');
+  const [auditLogs, setAuditLogs] = React.useState<any[]>([]);
+  const [loadingAudit, setLoadingAudit] = React.useState(true);
 
+  React.useEffect(() => {
+    const fetchAuditLogs = async () => {
+      try {
+        setLoadingAudit(true);
+        const { getAuditLogsAction } = await import('@/lib/db-actions');
+        const fetched = await getAuditLogsAction();
+        setAuditLogs(fetched);
+      } catch (err) {
+        console.error("Failed to load audit logs:", err);
+      } finally {
+        setLoadingAudit(false);
+      }
+    };
+    if (user?.role === 'Administrador') {
+      fetchAuditLogs();
+    }
+  }, [user]);
 
   if (user?.role !== 'Administrador') {
      return (
@@ -66,7 +87,7 @@ export default function LogsPage() {
      )
   }
 
-  const isLoading = loading.stockAdjustmentLogs || loading.sales || loading.cashSessions || loading.cashTransactions || loading.stockEntryLogs || loading.productChangeLogs || loading.accountsPayable || loading.purchaseOrders;
+  const isLoading = loading.stockAdjustmentLogs || loading.sales || loading.cashSessions || loading.cashTransactions || loading.stockEntryLogs || loading.productChangeLogs || loading.accountsPayable || loading.purchaseOrders || loadingAudit;
 
   const filterByDateAndUser = (logs: any[], userFieldPath: string | string[], dateField: string = 'date') => {
     return logs.filter(log => {
@@ -98,6 +119,18 @@ export default function LogsPage() {
   const filteredPayables = filterByDateAndUser(accountsPayable, 'registeredBy', 'dateCreated');
   const filteredPurchaseOrders = filterByDateAndUser(purchaseOrders, 'registeredBy', 'dateCreated');
   
+  const filteredAuditLogs = auditLogs.filter(log => {
+    const logDate = new Date(log.date);
+    const from = dateRange?.from ? startOfDay(dateRange.from) : null;
+    const to = dateRange?.to ? endOfDay(dateRange.to) : null;
+
+    const dateMatch = (!from || logDate >= from) && (!to || logDate <= to);
+    if (!dateMatch) return false;
+
+    if (selectedUserId === 'all') return true;
+    return log.userUid === selectedUserId;
+  });
+
   // Cash sessions have multiple user fields, so we filter differently
    const filteredCashSessions = cashSessions.filter(log => {
       const logDate = new Date(log.openingTime);
@@ -158,8 +191,9 @@ export default function LogsPage() {
       ) : (
         <Card className="rounded-2xl border-none shadow-sm bg-card">
           <CardContent className="p-4 sm:p-6">
-            <Tabs defaultValue="stock-adjustments">
+            <Tabs defaultValue="audit-logs">
                 <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:flex lg:flex-wrap h-auto">
+                    <TabsTrigger value="audit-logs">Logs de Auditoria</TabsTrigger>
                     <TabsTrigger value="stock-adjustments">Ajustes Estoque</TabsTrigger>
                     <TabsTrigger value="stock-entries">Entradas Estoque</TabsTrigger>
                     <TabsTrigger value="product-changes">Alterações Produtos</TabsTrigger>
@@ -169,6 +203,9 @@ export default function LogsPage() {
                     <TabsTrigger value="cash-transactions">Mov. de Caixa</TabsTrigger>
                     <TabsTrigger value="accounts-payable">Contas a Pagar</TabsTrigger>
                 </TabsList>
+                <TabsContent value="audit-logs" className="mt-4">
+                  <AuditLogTable logs={filteredAuditLogs} />
+                </TabsContent>
                 <TabsContent value="stock-adjustments" className="mt-4">
                   <StockAdjustmentLogTable logs={filteredAdjLogs} />
                 </TabsContent>
@@ -197,6 +234,78 @@ export default function LogsPage() {
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+// Local helper component to show audit logs beautifully
+import { Calendar, Info, User as UserIcon } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+
+function AuditLogTable({ logs }: { logs: any[] }) {
+  const getActionBadge = (action: string) => {
+    switch (action) {
+      case 'Abertura de Caixa':
+        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100/80">Abertura de Caixa</Badge>;
+      case 'Fechamento de Caixa':
+        return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100/80">Fechamento de Caixa</Badge>;
+      case 'Correção de Saldo de Fechamento':
+      case 'Correção de Saldo de Abertura':
+        return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100/80">Ajuste de Saldo</Badge>;
+      case 'Cancelamento de Venda':
+        return <Badge className="bg-red-100 text-red-800 hover:bg-red-100/80">Cancelamento</Badge>;
+      case 'Reabertura de Caixa':
+        return <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100/80">Reabertura</Badge>;
+      default:
+        return <Badge variant="outline">{action}</Badge>;
+    }
+  };
+
+  return (
+    <div className="rounded-md border mt-4 overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[180px]">Data / Hora</TableHead>
+            <TableHead className="w-[180px]">Ação</TableHead>
+            <TableHead>Detalhes</TableHead>
+            <TableHead className="w-[180px]">Usuário</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {logs.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                Nenhum log de auditoria encontrado para os filtros selecionados.
+              </TableCell>
+            </TableRow>
+          ) : (
+            logs.map((log) => (
+              <TableRow key={log.id} className="hover:bg-muted/50 transition-colors">
+                <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5" />
+                    {new Date(log.date).toLocaleString('pt-BR')}
+                  </div>
+                </TableCell>
+                <TableCell>{getActionBadge(log.action)}</TableCell>
+                <TableCell className="text-sm font-medium">
+                  <div className="flex items-start gap-1.5 max-w-md md:max-w-xl">
+                    <Info className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                    <span>{log.details}</span>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <UserIcon className="h-3.5 w-3.5" />
+                    <span>{log.userName}</span>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
     </div>
   );
 }
