@@ -27,6 +27,8 @@ import { mockSuppliersData, mockProductsData } from './data';
 const mapProduct = (p: any): Product => ({
   id: p.id,
   name: p.name,
+  description: p.description || undefined,
+  brand: p.brand || undefined,
   sku: p.sku,
   status: p.status as 'Ativo' | 'Inativo',
   category: p.category as any,
@@ -39,11 +41,19 @@ const mapProduct = (p: any): Product => ({
   supplier: p.supplier,
   barcode: p.barcode || undefined,
   imageUrl: p.imageUrl || undefined,
+  expiryDate: p.expiryDate ? p.expiryDate.toISOString() : undefined,
 });
 
 const mapSupplier = (s: any): Supplier => ({
   id: s.id,
   name: s.name,
+  cnpj: s.cnpj || undefined,
+  tradeName: s.tradeName || undefined,
+  address: s.address || undefined,
+  city: s.city || undefined,
+  state: s.state || undefined,
+  zipCode: s.zipCode || undefined,
+  notes: s.notes || undefined,
   contactName: s.contactName || undefined,
   phone: s.phone || undefined,
   email: s.email || undefined,
@@ -52,6 +62,12 @@ const mapSupplier = (s: any): Supplier => ({
 const mapCustomer = (c: any): Customer => ({
   id: c.id,
   name: c.name,
+  cpfCnpj: c.cpfCnpj || undefined,
+  birthDate: c.birthDate ? c.birthDate.toISOString() : undefined,
+  address: c.address || undefined,
+  city: c.city || undefined,
+  state: c.state || undefined,
+  zipCode: c.zipCode || undefined,
   phone: c.phone,
   email: c.email || undefined,
   creditLimit: c.creditLimit,
@@ -145,6 +161,7 @@ const mapAccountsPayable = (ap: any): AccountsPayable => ({
   id: ap.id,
   description: ap.description,
   amount: ap.amount,
+  category: ap.category || undefined,
   dateCreated: ap.dateCreated.toISOString(),
   dueDate: ap.dueDate.toISOString(),
   paymentDate: ap.paymentDate ? ap.paymentDate.toISOString() : null,
@@ -562,6 +579,8 @@ export async function addProductAction(productData: ProductFormData): Promise<vo
     await tx.product.create({
       data: {
         name: productData.name,
+        description: (productData as any).description || null,
+        brand: (productData as any).brand || null,
         sku: newSku,
         status: 'Ativo',
         category: productData.category,
@@ -574,6 +593,7 @@ export async function addProductAction(productData: ProductFormData): Promise<vo
         supplier: productData.supplier,
         barcode: productData.barcode || null,
         imageUrl: (productData as any).imageUrl || null,
+        expiryDate: (productData as any).expiryDate ? new Date((productData as any).expiryDate) : null,
         storeId: user.storeId,
       }
     });
@@ -613,6 +633,8 @@ export async function updateProductAction(updatedProductData: Product): Promise<
       where: { id },
       data: {
         name: data.name,
+        description: data.description || null,
+        brand: data.brand || null,
         category: data.category,
         price: data.price,
         minStock: data.minStock,
@@ -620,6 +642,7 @@ export async function updateProductAction(updatedProductData: Product): Promise<
         supplier: data.supplier,
         barcode: data.barcode || null,
         imageUrl: data.imageUrl || null,
+        expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
       },
     });
 
@@ -751,6 +774,12 @@ export async function addCustomerAction(customerData: Omit<Customer, 'id' | 'bal
   await prisma.customer.create({
     data: {
       name: customerData.name,
+      cpfCnpj: customerData.cpfCnpj || null,
+      birthDate: customerData.birthDate ? new Date(customerData.birthDate) : null,
+      address: customerData.address || null,
+      city: customerData.city || null,
+      state: customerData.state || null,
+      zipCode: customerData.zipCode || null,
       phone: customerData.phone,
       email: customerData.email || null,
       creditLimit: customerData.creditLimit,
@@ -769,6 +798,12 @@ export async function updateCustomerAction(updatedCustomer: Customer): Promise<v
     where: { id },
     data: {
       name: data.name,
+      cpfCnpj: data.cpfCnpj || null,
+      birthDate: data.birthDate ? new Date(data.birthDate) : null,
+      address: data.address || null,
+      city: data.city || null,
+      state: data.state || null,
+      zipCode: data.zipCode || null,
       phone: data.phone,
       email: data.email || null,
       creditLimit: data.creditLimit,
@@ -1240,6 +1275,13 @@ export async function addSupplierAction(supplierData: Omit<Supplier, 'id'>): Pro
   await prisma.supplier.create({
     data: {
       name: supplierData.name,
+      cnpj: supplierData.cnpj || null,
+      tradeName: supplierData.tradeName || null,
+      address: supplierData.address || null,
+      city: supplierData.city || null,
+      state: supplierData.state || null,
+      zipCode: supplierData.zipCode || null,
+      notes: supplierData.notes || null,
       contactName: supplierData.contactName || null,
       phone: supplierData.phone || null,
       email: supplierData.email || null,
@@ -1255,6 +1297,13 @@ export async function updateSupplierAction(updatedSupplier: Supplier): Promise<v
     where: { id },
     data: {
       name: data.name,
+      cnpj: data.cnpj || null,
+      tradeName: data.tradeName || null,
+      address: data.address || null,
+      city: data.city || null,
+      state: data.state || null,
+      zipCode: data.zipCode || null,
+      notes: data.notes || null,
       contactName: data.contactName || null,
       phone: data.phone || null,
       email: data.email || null,
@@ -1286,6 +1335,7 @@ export async function addPayableAction(
     data: {
       description: payableData.description,
       amount: payableData.amount,
+      category: payableData.category || null,
       dueDate: new Date(payableData.dueDate),
       status: 'Pendente',
       supplierId: payableData.supplierId || null,
@@ -1307,6 +1357,7 @@ export async function updatePayableAction(
     data: {
       description: data.description,
       amount: data.amount,
+      category: data.category || null,
       dueDate: new Date(data.dueDate),
       supplierId: data.supplierId || null,
       supplierName: data.supplierName || null,

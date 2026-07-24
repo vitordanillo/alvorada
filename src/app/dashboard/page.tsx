@@ -41,12 +41,17 @@ export default function DashboardPage() {
 
   const concludedSales = filteredSales.filter(s => s.status === 'Concluída');
   const totalRevenue = concludedSales.reduce((sum, sale) => sum + sale.total, 0);
+  const totalCost = concludedSales.reduce((sum, sale) => sum + (sale.totalCost || 0), 0);
+  const totalProfit = concludedSales.reduce((sum, sale) => sum + (sale.totalProfit || (sale.total - (sale.totalCost || 0))), 0);
   const totalSalesCount = concludedSales.length;
+  const averageTicket = totalSalesCount > 0 ? totalRevenue / totalSalesCount : 0;
   const activeProductsCount = products.filter(p => p.status === 'Ativo').length;
   const totalCustomersCount = customers.length;
 
   const statCards = [
     { title: 'Faturamento no Período', value: `R$ ${totalRevenue.toFixed(2).replace('.', ',')}`, change: '', changeType: 'increase', icon: CircleDollarSign },
+    { title: 'Lucro Estimado', value: `R$ ${totalProfit.toFixed(2).replace('.', ',')}`, change: '', changeType: 'increase', icon: CircleDollarSign },
+    { title: 'Ticket Médio', value: `R$ ${averageTicket.toFixed(2).replace('.', ',')}`, change: '', changeType: 'increase', icon: Activity },
     { title: 'Vendas no Período', value: `${totalSalesCount}`, change: '', changeType: 'increase', icon: Activity },
     { title: 'Produtos Ativos', value: `${activeProductsCount}`, change: '', changeType: 'increase', icon: Package },
     { title: 'Clientes Cadastrados', value: `${totalCustomersCount}`, change: '', changeType: 'increase', icon: Users },
@@ -84,7 +89,7 @@ export default function DashboardPage() {
       <PageHeader title="Dashboard" description="Bem-vindo ao painel do Alvorada Smart Market.">
         <DateRangePicker date={dateRange} onDateChange={setDateRange} />
       </PageHeader>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {statCards.map((card) => (
           <StatCard key={card.title} {...card} />
         ))}

@@ -25,6 +25,7 @@ import type { Customer } from '@/lib/types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
+import { formatCpfCnpj } from '@/lib/cnpj-lookup';
 
 interface CustomerTableProps {
   customers: Customer[];
@@ -55,6 +56,7 @@ export function CustomerTable({ customers, onEdit, onDelete, onRegisterPayment, 
           <TableHeader>
             <TableRow>
               <TableHead>Nome</TableHead>
+              <TableHead className="hidden md:table-cell">CPF/CNPJ</TableHead>
               <TableHead className="hidden md:table-cell">Telefone</TableHead>
               <TableHead>Pontos de Fidelidade</TableHead>
               <TableHead>Situação do Crédito</TableHead>
@@ -77,6 +79,9 @@ export function CustomerTable({ customers, onEdit, onDelete, onRegisterPayment, 
                     </Avatar>
                     <div className="font-medium">{customer.name}</div>
                   </div>
+                </TableCell>
+                <TableCell className="hidden md:table-cell font-mono text-sm">
+                  {customer.cpfCnpj ? formatCpfCnpj(customer.cpfCnpj) : '—'}
                 </TableCell>
                 <TableCell className="hidden md:table-cell">{customer.phone}</TableCell>
                 <TableCell>

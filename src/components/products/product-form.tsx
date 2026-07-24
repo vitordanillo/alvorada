@@ -14,6 +14,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -21,12 +22,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { CalendarIcon } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import type { Product } from '@/lib/types';
 import { useAppContext } from '@/context/app-context';
 
 const productSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(2, 'O nome deve ter pelo menos 2 caracteres.'),
+  description: z.string().optional().or(z.literal('')),
+  brand: z.string().optional().or(z.literal('')),
   barcode: z.string().optional(),
   category: z.enum(['Alimentos', 'Limpeza', 'Higiene', 'Bebidas', 'Outros'], {
     required_error: 'Selecione uma categoria.',
@@ -36,6 +45,7 @@ const productSchema = z.object({
   minStock: z.coerce.number({invalid_type_error: 'Estoque mínimo inválido'}).int().min(0, 'O estoque mínimo não pode ser negativo.'),
   unit: z.string().min(1, 'A unidade é obrigatória.'),
   supplier: z.string({ required_error: 'Selecione um fornecedor.' }),
+  expiryDate: z.date().optional().nullable(),
 });
 
 export type ProductFormData = z.infer<typeof productSchema>;
@@ -53,6 +63,8 @@ export function ProductForm({ product, onSubmit, onCancel }: ProductFormProps) {
     defaultValues: {
       id: product?.id,
       name: product?.name ?? '',
+      description: product?.description ?? '',
+      brand: product?.brand ?? '',
       barcode: product?.barcode ?? '',
       category: product?.category,
       price: product?.price ?? 0,
@@ -60,6 +72,7 @@ export function ProductForm({ product, onSubmit, onCancel }: ProductFormProps) {
       minStock: product?.minStock ?? 0,
       unit: product?.unit ?? '',
       supplier: product?.supplier,
+      expiryDate: product?.expiryDate ? new Date(product.expiryDate) : null,
     },
   });
 
@@ -79,19 +92,47 @@ export function ProductForm({ product, onSubmit, onCancel }: ProductFormProps) {
             </FormItem>
           )}
         />
-        <FormField
-          control={form.control}
-          name="barcode"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Código de Barras (Opcional)</FormLabel>
-              <FormControl>
-                <Input placeholder="Leia ou digite o código de barras" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="description"
+            render={({ field }) => (
+              <FormItem className="col-span-2">
+                <FormLabel>Descrição (Opcional)</FormLabel>
+                <FormControl>
+                  <Textarea placeholder="Detalhes do produto..." className="resize-none" rows={2} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="brand"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Marca (Opcional)</FormLabel>
+                <FormControl>
+                  <Input placeholder="Ex: Nestlé" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="barcode"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Código de Barras (Opcional)</FormLabel>
+                <FormControl>
+                  <Input placeholder="Leia ou digite o código" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
         <FormField
           control={form.control}
           name="category"
@@ -190,6 +231,45 @@ export function ProductForm({ product, onSubmit, onCancel }: ProductFormProps) {
                   ))}
                 </SelectContent>
               </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="expiryDate"
+          render={({ field }) => (
+            <FormItem className="flex flex-col">
+              <FormLabel>Data de Validade (Opcional)</FormLabel>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <FormControl>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "pl-3 text-left font-normal",
+                        !field.value && "text-muted-foreground"
+                      )}
+                    >
+                      {field.value ? (
+                        format(field.value, "dd/MM/yyyy", { locale: ptBR })
+                      ) : (
+                        <span>Selecione uma data</span>
+                      )}
+                      <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                    </Button>
+                  </FormControl>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={field.value || undefined}
+                    onSelect={field.onChange}
+                    initialFocus
+                    locale={ptBR}
+                  />
+                </PopoverContent>
+              </Popover>
               <FormMessage />
             </FormItem>
           )}

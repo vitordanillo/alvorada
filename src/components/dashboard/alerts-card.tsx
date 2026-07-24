@@ -5,10 +5,10 @@ import * as React from 'react';
 import { useAppContext } from '@/context/app-context';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { AlertTriangle, Box, UserX, Scale, Wallet } from 'lucide-react';
+import { AlertTriangle, Box, UserX, Scale, Wallet, Cake, ShieldAlert } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '../ui/button';
-import { format } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Skeleton } from '../ui/skeleton';
 
@@ -41,7 +41,33 @@ export function AlertsCard() {
         p => p.status === 'Pendente' && new Date(p.dueDate) < now
     );
 
-    const totalAlerts = cashDifferenceAlerts.length + creditLimitAlerts.length + lowStockAlerts.length + outOfStockAlerts.length + overduePayables.length;
+    const expiryAlerts = (products || []).filter((p) => {
+        if (!p.expiryDate || p.status !== 'Ativo') return false;
+        const expiry = new Date(p.expiryDate);
+        const days = differenceInDays(expiry, now);
+        return days >= 0 && days <= 30; // Próximos 30 dias
+    });
+
+    const expiredAlerts = (products || []).filter((p) => {
+        if (!p.expiryDate || p.status !== 'Ativo') return false;
+        return new Date(p.expiryDate) < now; // Vencidos
+    });
+
+    const birthdayAlerts = (customers || []).filter((c) => {
+        if (!c.birthDate) return false;
+        const birth = new Date(c.birthDate);
+        return birth.getMonth() === now.getMonth(); // Mês atual
+    });
+
+    const totalAlerts = 
+        cashDifferenceAlerts.length + 
+        creditLimitAlerts.length + 
+        lowStockAlerts.length + 
+        outOfStockAlerts.length + 
+        overduePayables.length +
+        expiryAlerts.length +
+        expiredAlerts.length +
+        birthdayAlerts.length;
 
     if (!isClient || loading.products || loading.customers || loading.cashSessions || loading.accountsPayable) {
         return (
@@ -147,7 +173,7 @@ export function AlertsCard() {
                             </AccordionContent>
                         </AccordionItem>
                      )}
-                     {overduePayables.length > 0 && (
+                      {overduePayables.length > 0 && (
                         <AccordionItem value="payables">
                             <AccordionTrigger className="text-base">
                                 <div className="flex items-center gap-2">
@@ -164,6 +190,68 @@ export function AlertsCard() {
                                             </Link>
                                         </li>
                                     ))}
+                                </ul>
+                            </AccordionContent>
+                        </AccordionItem>
+                    )}
+                    {(expiryAlerts.length > 0 || expiredAlerts.length > 0) && (
+                        <AccordionItem value="expiration">
+                            <AccordionTrigger className="text-base">
+                                <div className="flex items-center gap-2">
+                                    <ShieldAlert className="h-5 w-5 text-amber-600" />
+                                    Produtos Vencidos ou Próximos do Vencimento ({expiryAlerts.length + expiredAlerts.length})
+                                </div>
+                            </AccordionTrigger>
+                            <AccordionContent>
+                                <div className="space-y-3 pl-4">
+                                    {expiredAlerts.length > 0 && (
+                                        <div>
+                                            <h4 className="font-semibold text-destructive">Vencidos ({expiredAlerts.length}):</h4>
+                                            <ul className="list-disc pl-5 mt-1 space-y-1 text-sm">
+                                                {expiredAlerts.map(p => (
+                                                    <li key={p.id} className="text-destructive font-medium">
+                                                        {p.name} (Venceu em {format(new Date(p.expiryDate!), 'dd/MM/yyyy', {locale: ptBR})})
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                    {expiryAlerts.length > 0 && (
+                                        <div>
+                                            <h4 className="font-semibold text-amber-700">Vencem em até 30 dias ({expiryAlerts.length}):</h4>
+                                            <ul className="list-disc pl-5 mt-1 space-y-1 text-sm">
+                                                {expiryAlerts.map(p => (
+                                                    <li key={p.id}>
+                                                        {p.name} (Vence em {format(new Date(p.expiryDate!), 'dd/MM/yyyy', {locale: ptBR})})
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                </div>
+                            </AccordionContent>
+                        </AccordionItem>
+                    )}
+                    {birthdayAlerts.length > 0 && (
+                        <AccordionItem value="birthdays">
+                            <AccordionTrigger className="text-base">
+                                <div className="flex items-center gap-2">
+                                    <Cake className="h-5 w-5 text-pink-600" />
+                                    Aniversariantes do Mês ({birthdayAlerts.length})
+                                </div>
+                            </AccordionTrigger>
+                            <AccordionContent>
+                                <ul className="space-y-2 pl-4">
+                                    {birthdayAlerts.map(customer => {
+                                        const birth = new Date(customer.birthDate!);
+                                        return (
+                                            <li key={customer.id} className="text-sm">
+                                                <Link href={`/dashboard/customers/${customer.id}`} className="hover:underline font-medium">
+                                                    {customer.name} — Dia {birth.getDate()}/{birth.getMonth() + 1} 🎂
+                                                </Link>
+                                            </li>
+                                        );
+                                    })}
                                 </ul>
                             </AccordionContent>
                         </AccordionItem>

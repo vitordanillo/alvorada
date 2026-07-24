@@ -50,29 +50,39 @@ model SystemConfig {
 }
 
 model Product {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   name        String
-  sku         String   @unique
-  status      String   // 'Ativo' | 'Inativo'
-  category    String   // 'Alimentos' | 'Limpeza' | 'Higiene' | 'Bebidas' | 'Outros'
+  description String?   @db.Text
+  brand       String?
+  sku         String    @unique
+  status      String    // 'Ativo' | 'Inativo'
+  category    String    // 'Alimentos' | 'Limpeza' | 'Higiene' | 'Bebidas' | 'Outros'
   price       Float
   averageCost Float
-  costHistory Json     // Array<{ date: string, quantity: number, cost: number }>
+  costHistory Json      // Array<{ date: string, quantity: number, cost: number }>
   stock       Float
   minStock    Float
   unit        String
   supplier    String
   barcode     String?
-  imageUrl    String?  @db.VarChar(500)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  imageUrl    String?   @db.VarChar(500)
+  expiryDate  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   storeId     String?
-  store       Store?   @relation(fields: [storeId], references: [id])
+  store       Store?    @relation(fields: [storeId], references: [id])
 }
 
 model Supplier {
   id          String   @id @default(uuid())
   name        String
+  cnpj        String?
+  tradeName   String?
+  address     String?
+  city        String?
+  state       String?
+  zipCode     String?
+  notes       String?  @db.Text
   contactName String?
   phone       String?
   email       String?
@@ -83,19 +93,25 @@ model Supplier {
 }
 
 model Customer {
-  id            String   @id @default(uuid())
+  id            String    @id @default(uuid())
   name          String
+  cpfCnpj       String?
+  birthDate     DateTime?
+  address       String?
+  city          String?
+  state         String?
+  zipCode       String?
   phone         String
   email         String?
   creditLimit   Float
   balance       Float
-  notes         String?  @db.Text
-  tags          Json     // string[]
-  loyaltyPoints Float    @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  notes         String?   @db.Text
+  tags          Json      // string[]
+  loyaltyPoints Float     @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   storeId       String?
-  store         Store?   @relation(fields: [storeId], references: [id])
+  store         Store?    @relation(fields: [storeId], references: [id])
 }
 
 model Sale {
@@ -202,6 +218,7 @@ model AccountsPayable {
   id               String    @id @default(uuid())
   description      String
   amount           Float
+  category         String?   // 'Aluguel' | 'Energia' | 'Água' | 'Internet' | 'Fornecedor' | 'Salários' | 'Impostos' | 'Outros'
   dateCreated      DateTime  @default(now())
   dueDate          DateTime
   paymentDate      DateTime?

@@ -39,6 +39,7 @@ const PayableList = ({ payables, onEdit, onDelete, onPay }: AccountsPayableTable
       <TableRow>
         <TableHead>Vencimento</TableHead>
         <TableHead>Descrição</TableHead>
+        <TableHead>Categoria</TableHead>
         <TableHead>Fornecedor</TableHead>
         <TableHead>Status</TableHead>
         <TableHead className="text-right">Valor</TableHead>
@@ -50,16 +51,23 @@ const PayableList = ({ payables, onEdit, onDelete, onPay }: AccountsPayableTable
     <TableBody>
       {payables.length === 0 ? (
         <TableRow>
-            <TableCell colSpan={6} className="h-24 text-center">Nenhuma conta encontrada.</TableCell>
+          <TableCell colSpan={7} className="h-24 text-center">Nenhuma conta encontrada.</TableCell>
         </TableRow>
       ) : payables.map((payable) => {
         const isOverdue = isPast(new Date(payable.dueDate)) && payable.status === 'Pendente';
         return (
           <TableRow key={payable.id}>
             <TableCell className={isOverdue ? 'text-destructive font-medium' : ''}>
-                {format(new Date(payable.dueDate), "dd/MM/yyyy", { locale: ptBR })}
+              {format(new Date(payable.dueDate), "dd/MM/yyyy", { locale: ptBR })}
             </TableCell>
             <TableCell>{payable.description}</TableCell>
+            <TableCell>
+              {payable.category ? (
+                <Badge variant="secondary">{payable.category}</Badge>
+              ) : (
+                <span className="text-muted-foreground text-xs">—</span>
+              )}
+            </TableCell>
             <TableCell>{payable.supplierName || 'N/A'}</TableCell>
             <TableCell>
               <Badge variant={payable.status === 'Pago' ? 'default' : isOverdue ? 'destructive' : 'outline'}>
@@ -82,10 +90,10 @@ const PayableList = ({ payables, onEdit, onDelete, onPay }: AccountsPayableTable
                       <CheckCircle className="mr-2 h-4 w-4" /> Marcar como Pago
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => onEdit(payable)}>
-                        <Pencil className="mr-2 h-4 w-4" /> Editar
+                      <Pencil className="mr-2 h-4 w-4" /> Editar
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => onDelete(payable)} className="text-destructive focus:text-destructive">
-                        <Trash2 className="mr-2 h-4 w-4" /> Excluir
+                      <Trash2 className="mr-2 h-4 w-4" /> Excluir
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>

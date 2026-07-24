@@ -27,6 +27,7 @@ import { useAppContext } from '@/context/app-context';
 const formSchema = z.object({
   description: z.string().min(3, 'A descrição deve ter pelo menos 3 caracteres.'),
   amount: z.coerce.number().positive('O valor deve ser maior que zero.'),
+  category: z.string().optional(),
   dueDate: z.date({ required_error: 'A data de vencimento é obrigatória.'}),
   supplierId: z.string().optional(),
 });
@@ -46,6 +47,7 @@ export function AccountsPayableForm({ payable, onSubmit, onCancel }: AccountsPay
     defaultValues: {
         description: payable?.description || '',
         amount: payable?.amount || 0,
+        category: payable?.category || undefined,
         dueDate: payable?.dueDate ? new Date(payable.dueDate) : undefined,
         supplierId: payable?.supplierId || undefined,
     },
@@ -57,6 +59,7 @@ export function AccountsPayableForm({ payable, onSubmit, onCancel }: AccountsPay
     onSubmit({
         description: data.description,
         amount: data.amount,
+        category: (!data.category || data.category === 'none') ? undefined : data.category,
         dueDate: data.dueDate.toISOString(),
         supplierId: isNoSupplier ? undefined : data.supplierId,
         supplierName: supplier?.name,
@@ -134,31 +137,61 @@ export function AccountsPayableForm({ payable, onSubmit, onCancel }: AccountsPay
                 )}
             />
         </div>
-        <FormField
-          control={form.control}
-          name="supplierId"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Fornecedor (Opcional)</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value || ''}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Associe a um fornecedor" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="none">Nenhum</SelectItem>
-                  {suppliers.map(supplier => (
-                    <SelectItem key={supplier.id} value={supplier.id}>
-                      {supplier.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="category"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Categoria (Opcional)</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value || ''}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhuma</SelectItem>
+                    <SelectItem value="Aluguel">Aluguel</SelectItem>
+                    <SelectItem value="Energia">Energia</SelectItem>
+                    <SelectItem value="Água">Água</SelectItem>
+                    <SelectItem value="Internet">Internet</SelectItem>
+                    <SelectItem value="Fornecedor">Fornecedor</SelectItem>
+                    <SelectItem value="Salários">Salários</SelectItem>
+                    <SelectItem value="Impostos">Impostos</SelectItem>
+                    <SelectItem value="Outros">Outros</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="supplierId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Fornecedor (Opcional)</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value || ''}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Associe a um fornecedor" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhum</SelectItem>
+                    {suppliers.map(supplier => (
+                      <SelectItem key={supplier.id} value={supplier.id}>
+                        {supplier.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
         <div className="flex justify-end gap-2 pt-4">
             <Button type="button" variant="ghost" onClick={onCancel}>Cancelar</Button>
             <Button type="submit">Salvar</Button>

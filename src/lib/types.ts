@@ -3,6 +3,8 @@
 export type Product = {
   id: string;
   name: string;
+  description?: string;
+  brand?: string;
   sku: string;
   status: 'Ativo' | 'Inativo';
   category: 'Alimentos' | 'Limpeza' | 'Higiene' | 'Bebidas' | 'Outros';
@@ -15,6 +17,7 @@ export type Product = {
   supplier: string;
   barcode?: string;
   imageUrl?: string;
+  expiryDate?: string;
 };
 
 export type Sale = {
@@ -49,6 +52,12 @@ export type Sale = {
 export type Customer = {
   id: string;
   name: string;
+  cpfCnpj?: string;
+  birthDate?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
   phone: string;
   email?: string;
   creditLimit: number;
@@ -61,6 +70,13 @@ export type Customer = {
 export type Supplier = {
   id: string;
   name: string;
+  cnpj?: string;
+  tradeName?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  notes?: string;
   contactName?: string;
   phone?: string;
   email?: string;
@@ -191,6 +207,7 @@ export type AccountsPayable = {
   id: string;
   description: string;
   amount: number;
+  category?: string;
   dateCreated: string; // ISO
   dueDate: string; // ISO
   paymentDate: string | null; // ISO

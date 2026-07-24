@@ -22,6 +22,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import type { Supplier } from '@/lib/types';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { formatCnpj } from '@/lib/cnpj-lookup';
 
 interface SupplierTableProps {
   suppliers: Supplier[];
@@ -37,8 +38,10 @@ export function SupplierTable({ suppliers, onEdit, onDelete }: SupplierTableProp
           <TableHeader>
             <TableRow>
               <TableHead>Nome do Fornecedor</TableHead>
+              <TableHead className="hidden md:table-cell">CNPJ</TableHead>
               <TableHead className="hidden md:table-cell">Contato</TableHead>
               <TableHead className="hidden lg:table-cell">Telefone</TableHead>
+              <TableHead className="hidden lg:table-cell">Cidade/UF</TableHead>
               <TableHead>
                 <span className="sr-only">Ações</span>
               </TableHead>
@@ -52,11 +55,24 @@ export function SupplierTable({ suppliers, onEdit, onDelete }: SupplierTableProp
                     <Avatar className="h-9 w-9">
                       <AvatarFallback><Truck className="h-4 w-4 text-muted-foreground" /></AvatarFallback>
                     </Avatar>
-                    <div className="font-medium">{supplier.name}</div>
+                    <div>
+                      <div className="font-medium">{supplier.name}</div>
+                      {supplier.tradeName && (
+                        <div className="text-xs text-muted-foreground">{supplier.tradeName}</div>
+                      )}
+                    </div>
                   </div>
                 </TableCell>
-                <TableCell className="hidden md:table-cell">{supplier.contactName}</TableCell>
-                <TableCell className="hidden lg:table-cell">{supplier.phone}</TableCell>
+                <TableCell className="hidden md:table-cell font-mono text-sm">
+                  {supplier.cnpj ? formatCnpj(supplier.cnpj) : '—'}
+                </TableCell>
+                <TableCell className="hidden md:table-cell">{supplier.contactName || '—'}</TableCell>
+                <TableCell className="hidden lg:table-cell">{supplier.phone || '—'}</TableCell>
+                <TableCell className="hidden lg:table-cell">
+                  {supplier.city && supplier.state
+                    ? `${supplier.city}/${supplier.state}`
+                    : supplier.city || supplier.state || '—'}
+                </TableCell>
                 <TableCell>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
