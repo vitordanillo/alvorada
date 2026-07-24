@@ -231,41 +231,45 @@ async function checkAndSeedDatabase() {
       }
     }
 
-    let nextSku = lastSku;
-    let addedCount = 0;
-    for (const product of mockProductsData) {
-      const existing = await prisma.product.findFirst({ where: { name: product.name } });
-      if (!existing) {
-        nextSku++;
-        addedCount++;
-        await prisma.product.create({
-          data: {
-            name: product.name,
-            sku: String(nextSku),
-            status: 'Ativo',
-            category: product.category,
-            price: product.price,
-            averageCost: product.averageCost,
-            costHistory: product.costHistory as any,
-            stock: product.stock,
-            minStock: product.minStock,
-            unit: product.unit,
-            supplier: product.supplier,
-            barcode: product.barcode || null,
-            imageUrl: product.imageUrl || null,
-            storeId: defaultStore.id,
-          }
-        });
-      }
-    }
+    const existingProducts = await prisma.product.findMany({
+      select: { name: true }
+    });
+    const existingNamesSet = new Set(existingProducts.map(p => p.name));
 
-    if (addedCount > 0) {
+    const productsToInsert = mockProductsData.filter(p => !existingNamesSet.has(p.name));
+    
+    if (productsToInsert.length > 0) {
+      const dataToInsert = productsToInsert.map((product, index) => {
+        const skuNumber = lastSku + index + 1;
+        return {
+          name: product.name,
+          sku: String(skuNumber),
+          status: 'Ativo',
+          category: product.category,
+          price: product.price,
+          averageCost: product.averageCost,
+          costHistory: product.costHistory as any,
+          stock: product.stock,
+          minStock: product.minStock,
+          unit: product.unit,
+          supplier: product.supplier,
+          barcode: product.barcode || null,
+          imageUrl: product.imageUrl || null,
+          storeId: defaultStore.id,
+        };
+      });
+
+      await prisma.product.createMany({
+        data: dataToInsert
+      });
+
+      const nextSku = lastSku + productsToInsert.length;
       await prisma.systemConfig.upsert({
         where: { key: 'products_counter' },
         update: { value: { lastSku: nextSku } },
         create: { key: 'products_counter', value: { lastSku: nextSku } },
       });
-      console.log(`Self-healing seed: Added ${addedCount} new Brazilian supermarket products. New lastSku: ${nextSku}`);
+      console.log(`Self-healing seed: Added ${productsToInsert.length} new Brazilian supermarket products. New lastSku: ${nextSku}`);
     }
 
     const seedFlag = await prisma.systemConfig.findUnique({ where: { key: 'flags' } });
