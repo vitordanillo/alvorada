@@ -201,6 +201,73 @@ async function checkAndSeedDatabase() {
     await prisma.accountsPayable.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
     await prisma.purchaseOrder.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
 
+    // Seed / update suppliers
+    for (const supplier of mockSuppliersData) {
+      const existing = await prisma.supplier.findFirst({ where: { name: supplier.name } });
+      if (!existing) {
+        await prisma.supplier.create({
+          data: {
+            name: supplier.name,
+            contactName: supplier.contactName || null,
+            phone: supplier.phone || null,
+            email: supplier.email || null,
+            storeId: defaultStore.id,
+          }
+        });
+      }
+    }
+
+    // Seed / update products
+    const counterDoc = await prisma.systemConfig.findUnique({ where: { key: 'products_counter' } });
+    let lastSku = 0;
+    if (counterDoc && counterDoc.value) {
+      lastSku = ((counterDoc.value as any).lastSku || 0);
+    } else {
+      const maxProduct = await prisma.product.findFirst({
+        orderBy: { sku: 'desc' }
+      });
+      if (maxProduct && !isNaN(Number(maxProduct.sku))) {
+        lastSku = Number(maxProduct.sku);
+      }
+    }
+
+    let nextSku = lastSku;
+    let addedCount = 0;
+    for (const product of mockProductsData) {
+      const existing = await prisma.product.findFirst({ where: { name: product.name } });
+      if (!existing) {
+        nextSku++;
+        addedCount++;
+        await prisma.product.create({
+          data: {
+            name: product.name,
+            sku: String(nextSku),
+            status: 'Ativo',
+            category: product.category,
+            price: product.price,
+            averageCost: product.averageCost,
+            costHistory: product.costHistory as any,
+            stock: product.stock,
+            minStock: product.minStock,
+            unit: product.unit,
+            supplier: product.supplier,
+            barcode: product.barcode || null,
+            imageUrl: product.imageUrl || null,
+            storeId: defaultStore.id,
+          }
+        });
+      }
+    }
+
+    if (addedCount > 0) {
+      await prisma.systemConfig.upsert({
+        where: { key: 'products_counter' },
+        update: { value: { lastSku: nextSku } },
+        create: { key: 'products_counter', value: { lastSku: nextSku } },
+      });
+      console.log(`Self-healing seed: Added ${addedCount} new Brazilian supermarket products. New lastSku: ${nextSku}`);
+    }
+
     const seedFlag = await prisma.systemConfig.findUnique({ where: { key: 'flags' } });
     const isSeeded = seedFlag ? (seedFlag.value as any)?.seeded_v2 : false;
 
@@ -223,56 +290,6 @@ async function checkAndSeedDatabase() {
         });
         console.log("Default admin created: admin@alvorada.com / 123456");
       }
-
-      // Seed suppliers
-      for (const supplier of mockSuppliersData) {
-        const existing = await prisma.supplier.findFirst({ where: { name: supplier.name } });
-        if (!existing) {
-          await prisma.supplier.create({
-            data: {
-              name: supplier.name,
-              contactName: supplier.contactName || null,
-              phone: supplier.phone || null,
-              email: supplier.email || null,
-              storeId: defaultStore.id,
-            }
-          });
-        }
-      }
-
-      // Seed products
-      let skuCounter = 0;
-      for (const product of mockProductsData) {
-        skuCounter++;
-        const existing = await prisma.product.findFirst({ where: { name: product.name } });
-        if (!existing) {
-          await prisma.product.create({
-            data: {
-              name: product.name,
-              sku: String(skuCounter),
-              status: 'Ativo',
-              category: product.category,
-              price: product.price,
-              averageCost: product.averageCost,
-              costHistory: product.costHistory,
-              stock: product.stock,
-              minStock: product.minStock,
-              unit: product.unit,
-              supplier: product.supplier,
-              barcode: product.barcode || null,
-              imageUrl: product.imageUrl || null,
-              storeId: defaultStore.id,
-            }
-          });
-        }
-      }
-
-      // Initialize counter & config
-      await prisma.systemConfig.upsert({
-        where: { key: 'products_counter' },
-        update: { value: { lastSku: skuCounter } },
-        create: { key: 'products_counter', value: { lastSku: skuCounter } },
-      });
 
       await prisma.systemConfig.upsert({
         where: { key: 'config' },
