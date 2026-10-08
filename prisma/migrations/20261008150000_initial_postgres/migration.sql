@@ -1,6 +1,4 @@
--- CreateSchema
-CREATE SCHEMA IF NOT EXISTS "alvorada";
-
+-- The private schema is provisioned by the Supabase administrator before deployment.
 -- CreateTable
 CREATE TABLE "Store" (
     "id" TEXT NOT NULL,
