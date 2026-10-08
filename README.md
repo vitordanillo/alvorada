@@ -1,91 +1,53 @@
-# Alvorada - Migração de Firebase para MySQL (MariaDB)
+# Alvorada Smart Market
 
-Este projeto foi migrado de uma arquitetura client-side do Firebase (Auth e Firestore) para um banco de dados relacional **MySQL (MariaDB)** local ou hospedado, utilizando o **Prisma ORM** e **Next.js Server Actions**.
+Sistema de gestão para minimercado, feito com Next.js, Prisma e PostgreSQL no Supabase.
 
----
+## Requisitos
 
-## 🚀 Como Configurar e Rodar o Projeto em Casa (VPS)
+- Node.js 20 ou superior.
+- Um projeto Supabase dedicado ao Alvorada.
+- A connection string PostgreSQL do projeto. Para uma VPS somente IPv4, use o pooler de sessão do Supabase.
 
-Siga estes passos para configurar e inicializar o sistema no seu ambiente:
+## Configuração
 
-### 1. Requisitos Prévios
-* **Node.js** instalado na máquina/VPS (versão recomendada: LTS v20 ou superior).
-* **MySQL** ou **MariaDB** instalado e rodando (no seu caso, hospedado na VPS e acessível).
-* **HeidiSQL** (ou outro cliente MySQL) instalado no seu computador para gerenciar o banco de dados.
+1. Instale as dependências com `npm ci`.
+2. Copie `.env.example` para `.env` e configure `DATABASE_URL`, `AUTH_SESSION_SECRET` e, se usar recursos de IA, `GOOGLE_GENAI_API_KEY`.
+3. Gere `AUTH_SESSION_SECRET` localmente com um gerador criptográfico seguro e mantenha-o apenas no ambiente de execução.
+4. Use uma credencial dedicada, proprietária do schema privado `alvorada`, e aplique as migrations PostgreSQL com `npm run db:migrate`. As tabelas têm RLS habilitada e não são expostas pela Data API pública.
+5. Crie o primeiro administrador uma única vez, sem seed de demonstração:
 
----
-
-### 2. Configurando o Banco de Dados no HeidiSQL
-1. Abra o **HeidiSQL**.
-2. Crie uma nova conexão apontando para a sua **VPS** (IP da VPS, porta padrão `3306`, usuário e senha do banco).
-3. Após conectar, clique com o botão direito na lista de bancos e selecione **Criar novo** -> **Banco de dados**.
-4. Dê o nome de `alvorada` (ou o nome que preferir) e clique em OK.
-
----
-
-### 3. Baixando o Código e Instalando Dependências
-Abra o seu terminal na pasta do projeto e execute:
-
-```bash
-# 1. Puxe a versão mais recente do GitHub
-git pull origin main
-
-# 2. Instale todas as dependências necessárias
-npm install
+```powershell
+$env:ALVORADA_ADMIN_NAME = Read-Host 'Nome do administrador'
+$env:ALVORADA_ADMIN_EMAIL = Read-Host 'E-mail do administrador'
+$securePassword = Read-Host 'Senha (mínimo 8 caracteres; recomende 16 ou mais)' -AsSecureString
+$env:ALVORADA_ADMIN_PASSWORD = [System.Net.NetworkCredential]::new('', $securePassword).Password
+npm run bootstrap:admin
+Remove-Item Env:ALVORADA_ADMIN_PASSWORD
+Remove-Variable securePassword
 ```
 
----
+O bootstrap falha se já houver qualquer usuário e nunca sobrescreve contas. Ele cria somente a loja necessária e o administrador; produtos, clientes, vendas e fornecedores começam vazios. Não há credenciais padrão nem seed automático.
 
-### 4. Configurando as Variáveis de Ambiente
-Crie um arquivo chamado `.env` na raiz do projeto (ou edite o existente). Configure a variável `DATABASE_URL` com a string de conexão do seu banco de dados:
+## Desenvolvimento e produção
 
-```env
-# Formato: mysql://USUARIO:SENHA@IP_DA_VPS:PORTA/NOME_DO_BANCO
-DATABASE_URL="mysql://root:sua_senha_do_banco@localhost:3306/alvorada"
+- `npm run dev` inicia o Next.js em `http://localhost:3000`.
+- `npm run typecheck` verifica os tipos TypeScript.
+- `npm test` executa os testes de integração e requer uma base descartável isolada configurada em `TEST_DATABASE_URL`; o script recusa usar `DATABASE_URL`.
+- `npm run build` gera a versão de produção.
+- `npm start` inicia a versão de produção.
 
-# Chave API do Google Gemini (necessária para funcionalidades de Inteligência Artificial)
-GOOGLE_GENAI_API_KEY="sua_chave_aqui"
-```
+Nunca execute testes de integração contra uma base com dados de produção. Mantenha `.env` fora do Git e não exponha chaves administrativas ou a senha do PostgreSQL no navegador.
+O Pix permanece indisponível até que um provedor real seja configurado; a aplicação não confirma pagamentos simulados.
+Sem chave Google configurada, as sugestões de reposição usam o estoque mínimo cadastrado.
 
-*Nota: O arquivo `.env` está configurado no `.gitignore` e não será enviado para o GitHub por motivos de segurança.*
+## VPS Windows
 
----
+A instalação dedicada utiliza `C:\Sites\AlvoradaSmartMarket\app`, porta 3070 e processo PM2 `alvorada-smart-market`. O PM2 usa `C:\Sites\AlvoradaSmartMarket\pm2`; a tarefa de inicialização chama `deploy/resurrect.ps1`. As credenciais ficam somente em `.env`, fora do Git, e são carregadas pelo launcher.
 
-### 5. Executando as Migrações do Prisma
-Este comando lê a modelagem declarada em `prisma/schema.prisma` e cria automaticamente todas as 13 tabelas necessárias no seu banco de dados MySQL/MariaDB:
+`npm run build` gera o standalone e copia seus arquivos estáticos. Inicie-o com `deploy/ecosystem.config.cjs`; os logs ficam na pasta `logs` ao lado de `app`. `GET /api/health` verifica a conexão PostgreSQL. Para o acesso HTTP por IP solicitado, configure `AUTH_COOKIE_SECURE=false`; para HTTPS, use `true`.
 
-```bash
-npx prisma migrate dev --name init
-```
+Os testes usam o mesmo serviço de venda da aplicação, exigem um schema separado com sufixo `_test` e removem suas próprias linhas ao terminar. Validam troco, saldo de caixa, pontos, limite de crédito, validação de preço, Pix indisponível e concorrência de estoque.
 
-*Você verá no HeidiSQL que todas as tabelas (User, Product, Customer, Sale, etc.) foram criadas imediatamente.*
+## Histórico MySQL/MariaDB
 
----
-
-### 6. Iniciando a Aplicação
-Agora você já pode rodar o sistema:
-
-* **Modo de Desenvolvimento:**
-  ```bash
-  npm run dev
-  ```
-  A aplicação estará disponível em [http://localhost:3000](http://localhost:3000).
-
-* **Modo de Produção:**
-  ```bash
-  npm run build
-  ```
-  ```bash
-  npm start
-  ```
-
----
-
-## 🔑 Credenciais do Primeiro Acesso (Seed Automático)
-
-Na primeira inicialização do projeto, o sistema detectará que o banco de dados está vazio e executará uma função de semeadura automática (**Seed**). Ela cria os produtos e fornecedores de teste, e também cadastra o primeiro usuário Administrador do sistema:
-
-* **E-mail:** `admin@alvorada.com`
-* **Senha padrão:** `123456`
-
-> 💡 *Após realizar o primeiro login, recomenda-se criar novos operadores de caixa e gerentes através do painel de controle e redefinir a senha do administrador se necessário.*
+As migrations antigas foram preservadas em `prisma/legacy-mysql-migrations` apenas como referência histórica. O banco MariaDB existente não faz parte desta aplicação e não é alterado nem importado.

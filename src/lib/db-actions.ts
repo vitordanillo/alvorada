@@ -1,9 +1,12 @@
 'use server';
 
-import { prisma } from './db';
+import { prisma, withTransaction } from './db';
 import { Prisma } from '@prisma/client';
 import { cookies } from 'next/headers';
 import bcrypt from 'bcryptjs';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { recordLoginAttempt, clearLoginAttempts } from './login-rate-limit';
+import { processSale } from './sales-service';
 import type {
   Product,
   Customer,
@@ -20,7 +23,6 @@ import type {
   PurchaseOrder,
 } from './types';
 import type { ProductFormData } from '@/components/products/product-form';
-import { mockSuppliersData, mockProductsData } from './data';
 
 // --- HELPERS & MAPPERS ---
 
@@ -72,6 +74,7 @@ const mapCustomer = (c: any): Customer => ({
   email: c.email || undefined,
   creditLimit: c.creditLimit,
   balance: c.balance,
+  loyaltyPoints: c.loyaltyPoints,
   notes: c.notes || undefined,
   tags: c.tags as string[],
 });
@@ -186,159 +189,62 @@ const mapPurchaseOrder = (po: any): PurchaseOrder => ({
   notes: po.notes || undefined,
 });
 
-// --- SEED DATABASE ---
+const SESSION_COOKIE = 'alvorada-session';
+const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
-async function checkAndSeedDatabase() {
-  try {
-    // Ensure default store exists
-    let defaultStore = await prisma.store.findFirst();
-    if (!defaultStore) {
-      defaultStore = await prisma.store.create({
-        data: {
-          name: "Loja Principal",
-          cnpj: "00.000.000/0001-00",
-          address: "Rua Principal, 123",
-          phone: "(11) 99999-9999",
-        }
-      });
-      console.log("Default store created:", defaultStore.name);
-    }
-
-    // Self-healing migration: Associate any legacy null-store records with the default store
-    await prisma.user.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
-    await prisma.product.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
-    await prisma.supplier.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
-    await prisma.customer.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
-    await prisma.sale.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
-    await prisma.cashRegisterSession.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
-    await prisma.cashTransaction.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
-    await prisma.stockAdjustmentLog.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
-    await prisma.stockEntryLog.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
-    await prisma.productChangeLog.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
-    await prisma.accountsPayable.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
-    await prisma.purchaseOrder.updateMany({ where: { storeId: null }, data: { storeId: defaultStore.id } });
-
-    // Seed / update suppliers
-    for (const supplier of mockSuppliersData) {
-      const existing = await prisma.supplier.findFirst({ where: { name: supplier.name } });
-      if (!existing) {
-        await prisma.supplier.create({
-          data: {
-            name: supplier.name,
-            contactName: supplier.contactName || null,
-            phone: supplier.phone || null,
-            email: supplier.email || null,
-            storeId: defaultStore.id,
-          }
-        });
-      }
-    }
-
-    // Seed / update products
-    const counterDoc = await prisma.systemConfig.findUnique({ where: { key: 'products_counter' } });
-    let lastSku = 0;
-    if (counterDoc && counterDoc.value) {
-      lastSku = ((counterDoc.value as any).lastSku || 0);
-    } else {
-      const maxProduct = await prisma.product.findFirst({
-        orderBy: { sku: 'desc' }
-      });
-      if (maxProduct && !isNaN(Number(maxProduct.sku))) {
-        lastSku = Number(maxProduct.sku);
-      }
-    }
-
-    const existingProducts = await prisma.product.findMany({
-      select: { name: true }
-    });
-    const existingNamesSet = new Set(existingProducts.map(p => p.name));
-
-    const productsToInsert = mockProductsData.filter(p => !existingNamesSet.has(p.name));
-    
-    if (productsToInsert.length > 0) {
-      const dataToInsert = productsToInsert.map((product, index) => {
-        const skuNumber = lastSku + index + 1;
-        return {
-          name: product.name,
-          sku: String(skuNumber),
-          status: 'Ativo',
-          category: product.category,
-          price: product.price,
-          averageCost: product.averageCost,
-          costHistory: product.costHistory as any,
-          stock: product.stock,
-          minStock: product.minStock,
-          unit: product.unit,
-          supplier: product.supplier,
-          barcode: product.barcode || null,
-          imageUrl: product.imageUrl || null,
-          storeId: defaultStore.id,
-        };
-      });
-
-      await prisma.product.createMany({
-        data: dataToInsert
-      });
-
-      const nextSku = lastSku + productsToInsert.length;
-      await prisma.systemConfig.upsert({
-        where: { key: 'products_counter' },
-        update: { value: { lastSku: nextSku } },
-        create: { key: 'products_counter', value: { lastSku: nextSku } },
-      });
-      console.log(`Self-healing seed: Added ${productsToInsert.length} new Brazilian supermarket products. New lastSku: ${nextSku}`);
-    }
-
-    const seedFlag = await prisma.systemConfig.findUnique({ where: { key: 'flags' } });
-    const isSeeded = seedFlag ? (seedFlag.value as any)?.seeded_v2 : false;
-
-    if (!isSeeded) {
-      console.log("MySQL/MariaDB needs to be seeded/updated. Running seed function...");
-      
-      // Seeding users
-      const userCount = await prisma.user.count();
-      if (userCount === 0) {
-        const hashedAdminPassword = bcrypt.hashSync('123456', 10);
-        await prisma.user.create({
-          data: {
-            uid: 'admin-default-uid',
-            name: 'Administrador Alvorada',
-            email: 'admin@alvorada.com',
-            passwordHash: hashedAdminPassword,
-            role: 'Administrador',
-            storeId: defaultStore.id,
-          }
-        });
-        console.log("Default admin created: admin@alvorada.com / 123456");
-      }
-
-      await prisma.systemConfig.upsert({
-        where: { key: 'config' },
-        update: { value: { cancellationPassword: '1234' } },
-        create: { key: 'config', value: { cancellationPassword: '1234' } },
-      });
-
-      // Mark as seeded
-      await prisma.systemConfig.upsert({
-        where: { key: 'flags' },
-        update: { value: { seeded_v2: true } },
-        create: { key: 'flags', value: { seeded_v2: true } },
-      });
-
-      console.log("MySQL/MariaDB seeded successfully.");
-    }
-  } catch (error) {
-    console.error("Error seeding database:", error);
+function sessionSecret(): string {
+  const secret = process.env.AUTH_SESSION_SECRET;
+  if (!secret || Buffer.byteLength(secret) < 32) {
+    throw new Error('AUTH_SESSION_SECRET must contain at least 32 bytes.');
   }
+  return secret;
+}
+
+function signSession(uid: string): string {
+  const payload = Buffer.from(JSON.stringify({ uid, exp: Date.now() + SESSION_MAX_AGE * 1000 })).toString('base64url');
+  const signature = createHmac('sha256', sessionSecret()).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function readSessionUid(token?: string): string | null {
+  if (!token) return null;
+  const [payload, signature, extra] = token.split('.');
+  if (!payload || !signature || extra) return null;
+  const expected = createHmac('sha256', sessionSecret()).update(payload).digest();
+  let actual: Buffer;
+  try {
+    actual = Buffer.from(signature, 'base64url');
+  } catch {
+    return null;
+  }
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { uid?: unknown; exp?: unknown };
+    if (typeof parsed.uid !== 'string' || typeof parsed.exp !== 'number' || parsed.exp <= Date.now()) return null;
+    return parsed.uid;
+  } catch {
+    return null;
+  }
+}
+
+async function setAuthCookie(uid: string) {
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE, signSession(uid), {
+    path: '/',
+    httpOnly: true,
+    secure: process.env.AUTH_COOKIE_SECURE !== 'false' && process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: SESSION_MAX_AGE,
+  });
 }
 
 async function getAuthenticatedUser(): Promise<User> {
   const cookieStore = await cookies();
-  const token = cookieStore.get('firebase-auth-token')?.value;
-  if (!token) throw new Error("Usuário não autenticado.");
+  const uid = readSessionUid(cookieStore.get(SESSION_COOKIE)?.value);
+  if (!uid) throw new Error('Usuário não autenticado.');
 
-  const user = await prisma.user.findUnique({ where: { uid: token } });
-  if (!user) throw new Error("Usuário não encontrado.");
+  const user = await prisma.user.findUnique({ where: { uid } });
+  if (!user?.storeId) throw new Error('Usuário sem loja válida.');
 
   return {
     uid: user.uid,
@@ -361,15 +267,13 @@ async function verifyUserRole(allowedRoles: User['role'][]): Promise<User> {
 // --- AUTHENTICATION ACTIONS ---
 
 export async function getCurrentUserAction(): Promise<User | null> {
-  await checkAndSeedDatabase();
-  
   const cookieStore = await cookies();
-  const token = cookieStore.get('firebase-auth-token')?.value;
-  if (!token) return null;
+  const uid = readSessionUid(cookieStore.get(SESSION_COOKIE)?.value);
+  if (!uid) return null;
 
   try {
-    const user = await prisma.user.findUnique({ where: { uid: token } });
-    if (!user) return null;
+    const user = await prisma.user.findUnique({ where: { uid } });
+    if (!user?.storeId) return null;
 
     return {
       uid: user.uid,
@@ -386,18 +290,14 @@ export async function getCurrentUserAction(): Promise<User | null> {
 }
 
 export async function loginUserAction(email: string, password: string): Promise<User> {
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) throw new Error("E-mail ou senha inválidos.");
-
-  const isPasswordValid = bcrypt.compareSync(password, user.passwordHash);
-  if (!isPasswordValid) throw new Error("E-mail ou senha inválidos.");
-
-  const cookieStore = await cookies();
-  cookieStore.set('firebase-auth-token', user.uid, {
-    path: '/',
-    httpOnly: false, // Accessible by client middleware/script
-    maxAge: 60 * 60 * 24 * 7, // 1 week
-  });
+  if (typeof email !== 'string' || typeof password !== 'string' || email.length > 254 || Buffer.byteLength(password) > 72) throw new Error('E-mail ou senha inválidos.');
+  const normalizedEmail = email.trim().toLowerCase();
+  recordLoginAttempt(normalizedEmail);
+  const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+  const isPasswordValid = await bcrypt.compare(password, user?.passwordHash ?? '$2a$12$R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW');
+  if (!user?.storeId || !isPasswordValid) throw new Error("E-mail ou senha inválidos.");
+  clearLoginAttempts(normalizedEmail);
+  await setAuthCookie(user.uid);
 
   return {
     uid: user.uid,
@@ -405,34 +305,33 @@ export async function loginUserAction(email: string, password: string): Promise<
     email: user.email,
     role: user.role as any,
     avatarUrl: user.avatarUrl || undefined,
+    storeId: user.storeId,
   };
 }
 
-export async function registerUserAction(name: string, email: string, password: string): Promise<User> {
-  const existing = await prisma.user.findUnique({ where: { email } });
+export async function createUserAction(name: string, email: string, password: string, role: User['role']): Promise<User> {
+  const admin = await verifyUserRole(['Administrador']);
+  if (!name.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) || password.length < 12 || Buffer.byteLength(password) > 72) {
+    throw new Error('Informe nome e e-mail e use uma senha com pelo menos 12 caracteres.');
+  }
+  if (!['Gerente', 'Operador de Caixa', 'Estoquista'].includes(role)) throw new Error('A criação de novos administradores deve ser feita pelo proprietário do sistema.');
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (existing) throw new Error("E-mail já está em uso.");
 
-  const userCount = await prisma.user.count();
-  const defaultRole = userCount === 0 ? 'Administrador' : 'Operador de Caixa';
-
-  const uid = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-  const passwordHash = bcrypt.hashSync(password, 10);
+  const uid = randomUUID();
+  const passwordHash = await bcrypt.hash(password, 12);
 
   const user = await prisma.user.create({
     data: {
       uid,
-      name,
-      email,
+      name: name.trim(),
+      email: normalizedEmail,
       passwordHash,
-      role: defaultRole,
+      role,
+      storeId: admin.storeId,
     }
-  });
-
-  const cookieStore = await cookies();
-  cookieStore.set('firebase-auth-token', user.uid, {
-    path: '/',
-    httpOnly: false,
-    maxAge: 60 * 60 * 24 * 7,
   });
 
   return {
@@ -446,12 +345,15 @@ export async function registerUserAction(name: string, email: string, password: 
 
 export async function logoutUserAction(): Promise<void> {
   const cookieStore = await cookies();
-  cookieStore.delete('firebase-auth-token');
+  cookieStore.delete(SESSION_COOKIE);
 }
 
 export async function updateUserRoleAction(uid: string, role: User['role']): Promise<void> {
   const user = await verifyUserRole(['Administrador']);
-  const targetUser = await prisma.user.findUnique({ where: { uid } });
+  if (!['Administrador', 'Gerente', 'Operador de Caixa', 'Estoquista'].includes(role)) throw new Error('Cargo inválido.');
+  if (uid === user.uid) throw new Error('Você não pode alterar sua própria permissão.');
+  const targetUser = await prisma.user.findUnique({ where: { uid, storeId: user.storeId } });
+  if (!targetUser) throw new Error('Usuário não encontrado.');
   await prisma.user.update({
     where: { uid },
     data: { role },
@@ -501,7 +403,7 @@ export async function getInitialDataAction() {
 
     if (role === 'Administrador') {
       promises.push(prisma.user.findMany({ where: storeFilter }));
-      promises.push(prisma.systemConfig.findUnique({ where: { key: 'config' } }));
+      promises.push(prisma.systemConfig.findUnique({ where: { key: `config:${user.storeId}` } }));
     }
 
     const results = await Promise.all(promises);
@@ -518,7 +420,9 @@ export async function getInitialDataAction() {
         role: u.role as any,
         avatarUrl: u.avatarUrl || undefined,
       }));
-      systemSettings = results[5] ? (results[5].value as SystemSettings) : null;
+      systemSettings = results[5]
+        ? { cancellationPasswordConfigured: Boolean((results[5].value as any)?.cancellationPasswordHash) }
+        : null;
     }
   }
 
@@ -539,9 +443,13 @@ export async function getInitialDataAction() {
 }
 
 export async function getPaymentHistoryAction(customerId: string): Promise<CashTransaction[]> {
+  const user = await getAuthenticatedUser();
+  const customer = await prisma.customer.findFirst({ where: { id: customerId, storeId: user.storeId }, select: { id: true } });
+  if (!customer) throw new Error('Cliente não encontrado.');
   const transactions = await prisma.cashTransaction.findMany({
     where: {
       customerId,
+      storeId: user.storeId,
       type: 'Recebimento Fiado',
     },
     orderBy: {
@@ -553,8 +461,9 @@ export async function getPaymentHistoryAction(customerId: string): Promise<CashT
 }
 
 export async function getCashTransactionsAction(sessionId: string): Promise<CashTransaction[]> {
+  const user = await getAuthenticatedUser();
   const transactions = await prisma.cashTransaction.findMany({
-    where: { sessionId },
+    where: { sessionId, storeId: user.storeId },
     orderBy: { date: 'desc' },
   });
   return transactions.map(mapCashTransaction);
@@ -567,7 +476,7 @@ export async function addProductAction(productData: ProductFormData): Promise<vo
   const user = await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
   const counterKey = 'products_counter';
   
-  await prisma.$transaction(async (tx) => {
+  await withTransaction(async (tx) => {
     const counterDoc = await tx.systemConfig.findUnique({ where: { key: counterKey } });
     let newSkuNumber = 1;
     if (counterDoc && counterDoc.value) {
@@ -610,8 +519,8 @@ export async function updateProductAction(updatedProductData: Product): Promise<
   const user = await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
   const { id, ...data } = updatedProductData;
 
-  await prisma.$transaction(async (tx) => {
-    const oldProduct = await tx.product.findUnique({ where: { id } });
+  await withTransaction(async (tx) => {
+    const oldProduct = await tx.product.findUnique({ where: { id, storeId: user.storeId } });
     if (!oldProduct) throw new Error("Produto não encontrado.");
 
     const changes: any[] = [];
@@ -630,7 +539,7 @@ export async function updateProductAction(updatedProductData: Product): Promise<
     });
 
     await tx.product.update({
-      where: { id },
+      where: { id, storeId: user.storeId },
       data: {
         name: data.name,
         description: data.description || null,
@@ -662,9 +571,9 @@ export async function updateProductAction(updatedProductData: Product): Promise<
 }
 
 export async function setProductStatusAction(productId: string, status: 'Ativo' | 'Inativo'): Promise<void> {
-  await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
+  const user = await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
   await prisma.product.update({
-    where: { id: productId },
+    where: { id: productId, storeId: user.storeId },
     data: { status },
   });
 }
@@ -679,8 +588,8 @@ export async function addStockToProductsAction(
   for (const item of items) {
     if (item.quantity <= 0 || item.cost < 0) continue;
 
-    const product = await prisma.$transaction(async (tx) => {
-      const prod = await tx.product.findUnique({ where: { id: item.productId } });
+    const product = await withTransaction(async (tx) => {
+      const prod = await tx.product.findUnique({ where: { id: item.productId, storeId: user.storeId } });
       if (!prod) throw new Error(`Produto com id ${item.productId} não encontrado.`);
 
       const newHistoryEntry = {
@@ -699,7 +608,7 @@ export async function addStockToProductsAction(
       const newAverageCost = totalQuantityInHistory > 0 ? totalCostInHistory / totalQuantityInHistory : 0;
 
       const updated = await tx.product.update({
-        where: { id: item.productId },
+        where: { id: item.productId, storeId: user.storeId },
         data: {
           stock: { increment: item.quantity },
           costHistory: updatedCostHistory,
@@ -743,8 +652,8 @@ export async function adjustStockAction(
   notes: string
 ): Promise<void> {
   const user = await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
-  await prisma.$transaction(async (tx) => {
-    const product = await tx.product.findUnique({ where: { id: productId } });
+  await withTransaction(async (tx) => {
+    const product = await tx.product.findUnique({ where: { id: productId, storeId: user.storeId } });
     if (!product) throw new Error("Produto não encontrado.");
 
     await tx.stockAdjustmentLog.create({
@@ -762,7 +671,7 @@ export async function adjustStockAction(
     });
 
     await tx.product.update({
-      where: { id: productId },
+      where: { id: productId, storeId: user.storeId },
       data: { stock: newQuantity },
     });
   });
@@ -792,10 +701,10 @@ export async function addCustomerAction(customerData: Omit<Customer, 'id' | 'bal
 }
 
 export async function updateCustomerAction(updatedCustomer: Customer): Promise<void> {
-  await verifyUserRole(['Administrador', 'Gerente']);
+  const user = await verifyUserRole(['Administrador', 'Gerente']);
   const { id, ...data } = updatedCustomer;
   await prisma.customer.update({
-    where: { id },
+    where: { id, storeId: user.storeId },
     data: {
       name: data.name,
       cpfCnpj: data.cpfCnpj || null,
@@ -814,8 +723,8 @@ export async function updateCustomerAction(updatedCustomer: Customer): Promise<v
 }
 
 export async function deleteCustomerAction(customerId: string): Promise<void> {
-  await verifyUserRole(['Administrador', 'Gerente']);
-  await prisma.customer.delete({ where: { id: customerId } });
+  const user = await verifyUserRole(['Administrador', 'Gerente']);
+  await prisma.customer.delete({ where: { id: customerId, storeId: user.storeId } });
 }
 
 export async function addCreditPaymentAction(
@@ -824,17 +733,20 @@ export async function addCreditPaymentAction(
   activeSessionId: string
 ): Promise<CashTransaction> {
   const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
-  return await prisma.$transaction(async (tx) => {
-    const customer = await tx.customer.findUnique({ where: { id: customerId } });
+  return await withTransaction(async (tx) => {
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Valor inválido.');
+    const session = await tx.cashRegisterSession.findUnique({ where: { id: activeSessionId, storeId: user.storeId } });
+    if (!session || session.status !== 'Aberto') throw new Error('Caixa não está aberto.');
+    const customer = await tx.customer.findUnique({ where: { id: customerId, storeId: user.storeId } });
     if (!customer) throw new Error("Cliente não encontrado.");
 
     await tx.customer.update({
-      where: { id: customerId },
+      where: { id: customerId, storeId: user.storeId },
       data: { balance: { increment: -amount } },
     });
 
     await tx.cashRegisterSession.update({
-      where: { id: activeSessionId },
+      where: { id: activeSessionId, storeId: user.storeId },
       data: {
         calculatedCashInDrawer: { increment: amount },
         totalCreditPayments: { increment: amount },
@@ -860,142 +772,9 @@ export async function addCreditPaymentAction(
 }
 
 // Sales
-export async function addSaleAction(
-  saleData: Omit<Sale, 'id' | 'date' | 'status'>,
-  activeSessionId: string
-): Promise<Sale> {
+export async function addSaleAction(saleData: Omit<Sale, 'id' | 'date' | 'status'>, activeSessionId: string): Promise<Sale> {
   const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
-  return await prisma.$transaction(async (tx) => {
-    const productIds = saleData.items.map(i => i.productId);
-    const products = await tx.product.findMany({ where: { id: { in: productIds } } });
-
-    const itemsWithCost = [];
-    let totalCost = 0;
-
-    for (const item of saleData.items) {
-      const prod = products.find(p => p.id === item.productId);
-      if (!prod || prod.stock < item.quantity) {
-        throw new Error(`Estoque insuficiente para o produto ${item.productName}`);
-      }
-      const costAtTimeOfSale = prod.averageCost || 0;
-      itemsWithCost.push({ ...item, costAtTimeOfSale });
-      totalCost += costAtTimeOfSale * item.quantity;
-    }
-
-    const totalProfit = saleData.total - totalCost;
-
-    const sale = await tx.sale.create({
-      data: {
-        items: itemsWithCost,
-        total: saleData.total,
-        totalCost,
-        totalProfit,
-        customerId: saleData.customerId,
-        customerName: saleData.customerName,
-        paymentMethods: saleData.paymentMethods,
-        cashRegisterSessionId: activeSessionId,
-        status: 'Concluída',
-        storeId: user.storeId,
-      }
-    });
-
-    // Update stocks
-    for (const item of saleData.items) {
-      await tx.product.update({
-        where: { id: item.productId },
-        data: { stock: { decrement: item.quantity } },
-      });
-    }
-
-    // Update Cash Session
-    const sessionUpdate: any = { totalSales: { increment: saleData.total } };
-    let fiadoAmount = 0;
-
-    const salesByPaymentMethod: any = {};
-
-    for (const payment of saleData.paymentMethods) {
-      if (payment.method === 'Dinheiro') {
-        sessionUpdate.calculatedCashInDrawer = { increment: payment.amount };
-        salesByPaymentMethod['Dinheiro'] = payment.amount;
-      } else if (payment.method === 'Cartão') {
-        salesByPaymentMethod['Cartão'] = payment.amount;
-      } else if (payment.method === 'Pix') {
-        salesByPaymentMethod['Pix'] = payment.amount;
-      } else if (payment.method === 'Fiado') {
-        fiadoAmount = payment.amount;
-      }
-    }
-
-    // Since we store salesByPaymentMethod as a JSON column in session, we need to load and merge it
-    const session = await tx.cashRegisterSession.findUnique({ where: { id: activeSessionId } });
-    if (session) {
-      const currentMethods = (session.salesByPaymentMethod as any) || { Dinheiro: 0, Pix: 0, Cartão: 0 };
-      const mergedMethods = {
-        Dinheiro: (currentMethods.Dinheiro || 0) + (salesByPaymentMethod['Dinheiro'] || 0),
-        Pix: (currentMethods.Pix || 0) + (salesByPaymentMethod['Pix'] || 0),
-        Cartão: (currentMethods.Cartão || 0) + (salesByPaymentMethod['Cartão'] || 0),
-      };
-      sessionUpdate.salesByPaymentMethod = mergedMethods;
-    }
-
-    await tx.cashRegisterSession.update({
-      where: { id: activeSessionId },
-      data: sessionUpdate,
-    });
-
-    let pointsUsed = 0;
-    for (const payment of saleData.paymentMethods) {
-      if (payment.method === 'Pontos') {
-        pointsUsed += payment.amount * 10; // R$ 1,00 = 10 pontos
-      }
-    }
-
-    if (pointsUsed > 0 && saleData.customerId !== 'default') {
-      const customer = await tx.customer.findUnique({ where: { id: saleData.customerId } });
-      if (!customer) throw new Error("Cliente não encontrado.");
-      if ((customer.loyaltyPoints || 0) < pointsUsed) {
-        throw new Error(`Pontos de fidelidade insuficientes. Necessário: ${pointsUsed}, Disponível: ${customer.loyaltyPoints || 0}`);
-      }
-      await tx.customer.update({
-        where: { id: saleData.customerId },
-        data: { loyaltyPoints: { decrement: pointsUsed } },
-      });
-    }
-
-    // Accumulate points for new purchase (excluding any portion paid with points)
-    let cashOrCardTotal = saleData.total;
-    for (const payment of saleData.paymentMethods) {
-      if (payment.method === 'Pontos') {
-        cashOrCardTotal -= payment.amount;
-      }
-    }
-    if (cashOrCardTotal > 0 && saleData.customerId !== 'default') {
-      const pointsEarned = Math.floor(cashOrCardTotal * 0.1); // 1 ponto por R$ 10,00 gastos
-      if (pointsEarned > 0) {
-        await tx.customer.update({
-          where: { id: saleData.customerId },
-          data: { loyaltyPoints: { increment: pointsEarned } },
-        });
-      }
-    }
-
-    if (fiadoAmount > 0 && saleData.customerId !== 'default') {
-      const customer = await tx.customer.findUnique({ where: { id: saleData.customerId } });
-      if (!customer) throw new Error("Cliente não encontrado.");
-
-      const availableCredit = customer.creditLimit - customer.balance;
-      if (fiadoAmount > availableCredit) {
-        throw new Error(`Limite de crédito excedido para o cliente ${customer.name}. Limite disponível: R$ ${availableCredit.toFixed(2)}`);
-      }
-
-      await tx.customer.update({
-        where: { id: saleData.customerId },
-        data: { balance: { increment: fiadoAmount } },
-      });
-    }
-
-    return mapSale(sale);
-  });
+  return mapSale(await processSale(saleData, activeSessionId, user));
 }
 
 export async function cancelSaleAction(
@@ -1004,12 +783,14 @@ export async function cancelSaleAction(
   passwordAttempt: string
 ): Promise<void> {
   const user = await verifyUserRole(['Administrador', 'Gerente']);
-  const configDoc = await prisma.systemConfig.findUnique({ where: { key: 'config' } });
-  const currentPassword = (configDoc?.value as any)?.cancellationPassword || '1234';
-  if (passwordAttempt !== currentPassword) throw new Error("Senha de cancelamento incorreta.");
+  const configDoc = await prisma.systemConfig.findUnique({ where: { key: `config:${user.storeId}` } });
+  const passwordHash = (configDoc?.value as any)?.cancellationPasswordHash;
+  if (typeof passwordHash !== 'string' || !passwordHash || !(await bcrypt.compare(passwordAttempt, passwordHash))) {
+    throw new Error("Configure a senha de cancelamento antes de cancelar vendas.");
+  }
 
-  await prisma.$transaction(async (tx) => {
-    const sale = await tx.sale.findUnique({ where: { id: saleId } });
+  await withTransaction(async (tx) => {
+    const sale = await tx.sale.findUnique({ where: { id: saleId, storeId: user.storeId } });
     if (!sale) throw new Error("Venda não encontrada.");
     if (sale.status === 'Cancelada') throw new Error("Esta venda já foi cancelada.");
 
@@ -1017,7 +798,7 @@ export async function cancelSaleAction(
     const items = sale.items as any[];
     for (const item of items) {
       await tx.product.update({
-        where: { id: item.productId },
+        where: { id: item.productId, storeId: user.storeId },
         data: { stock: { increment: item.quantity } },
       });
     }
@@ -1045,7 +826,7 @@ export async function cancelSaleAction(
         }
       }
 
-      const session = await tx.cashRegisterSession.findUnique({ where: { id: sale.cashRegisterSessionId } });
+      const session = await tx.cashRegisterSession.findUnique({ where: { id: sale.cashRegisterSessionId, storeId: user.storeId } });
       if (session) {
         const currentMethods = (session.salesByPaymentMethod as any) || { Dinheiro: 0, Pix: 0, Cartão: 0 };
         const mergedMethods = {
@@ -1057,13 +838,13 @@ export async function cancelSaleAction(
       }
 
       await tx.cashRegisterSession.update({
-        where: { id: sale.cashRegisterSessionId },
+        where: { id: sale.cashRegisterSessionId, storeId: user.storeId },
         data: sessionUpdate,
       });
 
       if (fiadoAmount > 0 && sale.customerId !== 'default') {
         await tx.customer.update({
-          where: { id: sale.customerId },
+          where: { id: sale.customerId, storeId: user.storeId },
           data: { balance: { decrement: fiadoAmount } },
         });
       }
@@ -1073,7 +854,7 @@ export async function cancelSaleAction(
         // 1. Give back points used to pay
         if (pointsAmount > 0) {
           await tx.customer.update({
-            where: { id: sale.customerId },
+            where: { id: sale.customerId, storeId: user.storeId },
             data: { loyaltyPoints: { increment: pointsAmount * 10 } },
           });
         }
@@ -1088,7 +869,7 @@ export async function cancelSaleAction(
           const pointsEarned = Math.floor(cashOrCardTotal * 0.1);
           if (pointsEarned > 0) {
             await tx.customer.update({
-              where: { id: sale.customerId },
+              where: { id: sale.customerId, storeId: user.storeId },
               data: { loyaltyPoints: { decrement: pointsEarned } },
             });
           }
@@ -1097,7 +878,7 @@ export async function cancelSaleAction(
     }
 
     await tx.sale.update({
-      where: { id: saleId },
+      where: { id: saleId, storeId: user.storeId },
       data: {
         status: 'Cancelada',
         cancellationReason: reason,
@@ -1114,6 +895,7 @@ export async function cancelSaleAction(
 // Cash Registers
 export async function openCashRegisterAction(openingBalance: number): Promise<void> {
   const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
+  if (typeof openingBalance !== 'undefined' && (!Number.isFinite(openingBalance) || openingBalance < 0)) throw new Error('Saldo inválido.');
   const activeSession = await prisma.cashRegisterSession.findFirst({ where: { status: 'Aberto', storeId: user.storeId } });
   if (activeSession) throw new Error("Já existe um caixa aberto.");
 
@@ -1142,7 +924,7 @@ export async function openCashRegisterAction(openingBalance: number): Promise<vo
 export async function closeCashRegisterAction(sessionId: string, closingBalance: number): Promise<void> {
   const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
   await prisma.cashRegisterSession.update({
-    where: { id: sessionId },
+    where: { id: sessionId, storeId: user.storeId },
     data: {
       status: 'Fechado',
       closingTime: new Date(),
@@ -1157,13 +939,13 @@ export async function closeCashRegisterAction(sessionId: string, closingBalance:
 
 export async function correctCashClosingAction(sessionId: string, newClosingBalance: number): Promise<void> {
   const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
-  const session = await prisma.cashRegisterSession.findUnique({ where: { id: sessionId } });
+  const session = await prisma.cashRegisterSession.findUnique({ where: { id: sessionId, storeId: user.storeId } });
   if (!session) throw new Error("Sessão não encontrada");
 
   const oldClosingBalance = session.closingBalance || 0;
 
   await prisma.cashRegisterSession.update({
-    where: { id: sessionId },
+    where: { id: sessionId, storeId: user.storeId },
     data: {
       closingBalance: newClosingBalance,
       correction: {
@@ -1180,14 +962,14 @@ export async function correctCashClosingAction(sessionId: string, newClosingBala
 
 export async function correctOpeningBalanceAction(sessionId: string, newOpeningBalance: number): Promise<void> {
   const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
-  await prisma.$transaction(async (tx) => {
-    const session = await tx.cashRegisterSession.findUnique({ where: { id: sessionId } });
+  await withTransaction(async (tx) => {
+    const session = await tx.cashRegisterSession.findUnique({ where: { id: sessionId, storeId: user.storeId } });
     if (!session) throw new Error("Sessão de caixa não encontrada.");
 
     const difference = newOpeningBalance - session.openingBalance;
 
     await tx.cashRegisterSession.update({
-      where: { id: sessionId },
+      where: { id: sessionId, storeId: user.storeId },
       data: {
         openingBalance: newOpeningBalance,
         calculatedCashInDrawer: { increment: difference },
@@ -1210,7 +992,7 @@ export async function reopenCashRegisterAction(sessionId: string): Promise<void>
   if (activeSession) throw new Error("Não é possível reabrir um caixa enquanto outro já está ativo.");
 
   await prisma.cashRegisterSession.update({
-    where: { id: sessionId },
+    where: { id: sessionId, storeId: user.storeId },
     data: {
       status: 'Aberto',
       closingTime: null,
@@ -1225,15 +1007,15 @@ export async function reopenCashRegisterAction(sessionId: string): Promise<void>
 }
 
 export async function cancelCashRegisterOpeningAction(sessionId: string): Promise<void> {
-  await verifyUserRole(['Administrador', 'Gerente']);
-  await prisma.$transaction(async (tx) => {
-    const session = await tx.cashRegisterSession.findUnique({ where: { id: sessionId } });
+  const user = await verifyUserRole(['Administrador', 'Gerente']);
+  await withTransaction(async (tx) => {
+    const session = await tx.cashRegisterSession.findUnique({ where: { id: sessionId, storeId: user.storeId } });
     if (!session) throw new Error("Sessão de caixa não encontrada.");
 
     const hasTransactions = session.totalSales > 0 || session.totalExpenses > 0 || session.totalWithdrawals > 0 || session.totalCreditPayments > 0;
     if (hasTransactions) throw new Error("Não é possível cancelar. O caixa já possui movimentações.");
 
-    await tx.cashRegisterSession.delete({ where: { id: sessionId } });
+    await tx.cashRegisterSession.delete({ where: { id: sessionId, storeId: user.storeId } });
   });
 }
 
@@ -1242,7 +1024,7 @@ export async function addCashTransactionAction(
   activeSessionId: string
 ): Promise<void> {
   const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
-  await prisma.$transaction(async (tx) => {
+  await withTransaction(async (tx) => {
     await tx.cashTransaction.create({
       data: {
         sessionId: activeSessionId,
@@ -1263,7 +1045,7 @@ export async function addCashTransactionAction(
     }
 
     await tx.cashRegisterSession.update({
-      where: { id: activeSessionId },
+      where: { id: activeSessionId, storeId: user.storeId },
       data: updatePayload,
     });
   });
@@ -1291,10 +1073,10 @@ export async function addSupplierAction(supplierData: Omit<Supplier, 'id'>): Pro
 }
 
 export async function updateSupplierAction(updatedSupplier: Supplier): Promise<void> {
-  await verifyUserRole(['Administrador', 'Gerente']);
+  const user = await verifyUserRole(['Administrador', 'Gerente']);
   const { id, ...data } = updatedSupplier;
   await prisma.supplier.update({
-    where: { id },
+    where: { id, storeId: user.storeId },
     data: {
       name: data.name,
       cnpj: data.cnpj || null,
@@ -1312,16 +1094,20 @@ export async function updateSupplierAction(updatedSupplier: Supplier): Promise<v
 }
 
 export async function deleteSupplierAction(supplierId: string): Promise<void> {
-  await verifyUserRole(['Administrador', 'Gerente']);
-  await prisma.supplier.delete({ where: { id: supplierId } });
+  const user = await verifyUserRole(['Administrador', 'Gerente']);
+  await prisma.supplier.delete({ where: { id: supplierId, storeId: user.storeId } });
 }
 
 export async function updateCancellationPasswordAction(newPassword: string): Promise<void> {
   const user = await verifyUserRole(['Administrador']);
+  if (newPassword.length < 12 || Buffer.byteLength(newPassword) > 72) {
+    throw new Error('A senha de cancelamento deve ter no mínimo 12 caracteres e no máximo 72 bytes.');
+  }
+  const passwordHash = await bcrypt.hash(newPassword, 12);
   await prisma.systemConfig.upsert({
-    where: { key: 'config' },
-    update: { value: { cancellationPassword: newPassword } },
-    create: { key: 'config', value: { cancellationPassword: newPassword } },
+    where: { key: `config:${user.storeId}` },
+    update: { value: { cancellationPasswordHash: passwordHash } },
+    create: { key: `config:${user.storeId}`, value: { cancellationPasswordHash: passwordHash } },
   });
   await logAuditEvent('Alterar Senha de Cancelamento', `Senha de cancelamento de vendas alterada por ${user.name}`);
 }
@@ -1351,9 +1137,9 @@ export async function updatePayableAction(
   payableId: string,
   data: Omit<AccountsPayable, 'id' | 'status' | 'registeredBy' | 'paymentDate' | 'dateCreated'>
 ): Promise<void> {
-  await verifyUserRole(['Administrador', 'Gerente']);
+  const user = await verifyUserRole(['Administrador', 'Gerente']);
   await prisma.accountsPayable.update({
-    where: { id: payableId },
+    where: { id: payableId, storeId: user.storeId },
     data: {
       description: data.description,
       amount: data.amount,
@@ -1366,8 +1152,8 @@ export async function updatePayableAction(
 }
 
 export async function deletePayableAction(payableId: string): Promise<void> {
-  await verifyUserRole(['Administrador', 'Gerente']);
-  await prisma.accountsPayable.delete({ where: { id: payableId } });
+  const user = await verifyUserRole(['Administrador', 'Gerente']);
+  await prisma.accountsPayable.delete({ where: { id: payableId, storeId: user.storeId } });
 }
 
 export async function markPayableAsPaidAction(
@@ -1376,12 +1162,15 @@ export async function markPayableAsPaidAction(
   activeSessionId: string | null
 ): Promise<void> {
   const user = await verifyUserRole(['Administrador', 'Gerente']);
-  await prisma.$transaction(async (tx) => {
-    const payable = await tx.accountsPayable.findUnique({ where: { id: payableId } });
+  await withTransaction(async (tx) => {
+    const payable = await tx.accountsPayable.findUnique({ where: { id: payableId, storeId: user.storeId } });
     if (!payable) throw new Error("Conta a pagar não encontrada.");
+    if (payable.status === 'Pago') throw new Error('Esta conta já foi paga.');
 
     if (fromCashRegister) {
-      if (!activeSessionId) throw new Error("Não há caixa aberto para registrar o pagamento.");
+      const session = activeSessionId ? await tx.cashRegisterSession.findUnique({ where: { id: activeSessionId, storeId: user.storeId } }) : null;
+      if (!session || session.status !== 'Aberto') throw new Error('Caixa não está aberto.');
+      activeSessionId = session.id;
 
       await tx.cashTransaction.create({
         data: {
@@ -1396,7 +1185,7 @@ export async function markPayableAsPaidAction(
       });
 
       await tx.cashRegisterSession.update({
-        where: { id: activeSessionId },
+        where: { id: activeSessionId, storeId: user.storeId },
         data: {
           calculatedCashInDrawer: { decrement: payable.amount },
           totalExpenses: { increment: payable.amount },
@@ -1405,7 +1194,7 @@ export async function markPayableAsPaidAction(
     }
 
     await tx.accountsPayable.update({
-      where: { id: payableId },
+      where: { id: payableId, storeId: user.storeId },
       data: {
         status: 'Pago',
         paymentDate: new Date(),
@@ -1441,9 +1230,9 @@ export async function updatePurchaseOrderAction(
   orderId: string,
   orderData: Omit<PurchaseOrder, 'id' | 'dateCreated' | 'status' | 'registeredBy' | 'items' | 'totalCost'> & { items: any; totalCost: any }
 ): Promise<void> {
-  await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
+  const user = await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
   await prisma.purchaseOrder.update({
-    where: { id: orderId },
+    where: { id: orderId, storeId: user.storeId },
     data: {
       supplierId: orderData.supplierId,
       supplierName: orderData.supplierName,
@@ -1460,14 +1249,14 @@ export async function receivePurchaseOrderAction(
   receivedItems: { productId: string; productName: string; quantityReceived: number; cost: number }[]
 ): Promise<void> {
   const user = await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
-  await prisma.$transaction(async (tx) => {
+  await withTransaction(async (tx) => {
     // --- 1. READ PHASE ---
-    const order = await tx.purchaseOrder.findUnique({ where: { id: orderId } });
+    const order = await tx.purchaseOrder.findUnique({ where: { id: orderId, storeId: user.storeId } });
     if (!order) throw new Error("Pedido de compra não encontrado.");
 
     const validReceivedItems = receivedItems.filter(item => item.quantityReceived > 0);
     const productIds = validReceivedItems.map(item => item.productId);
-    const products = await tx.product.findMany({ where: { id: { in: productIds } } });
+    const products = await tx.product.findMany({ where: { id: { in: productIds }, storeId: user.storeId } });
 
     // --- 2. VALIDATION & PREPARATION ---
     const productsData: { [id: string]: any } = {};
@@ -1498,7 +1287,7 @@ export async function receivePurchaseOrderAction(
       const newAverageCost = totalQuantityInHistory > 0 ? totalCostInHistory / totalQuantityInHistory : 0;
 
       await tx.product.update({
-        where: { id: receivedItem.productId },
+        where: { id: receivedItem.productId, storeId: user.storeId },
         data: {
           stock: { increment: receivedItem.quantityReceived },
           costHistory: updatedCostHistory,
@@ -1526,7 +1315,7 @@ export async function receivePurchaseOrderAction(
     const newStatus = newTotalQuantityReceived >= totalQuantityOrdered ? 'Recebido' : 'Recebido Parcialmente';
 
     await tx.purchaseOrder.update({
-      where: { id: orderId },
+      where: { id: orderId, storeId: user.storeId },
       data: {
         items: updatedPOItems,
         status: newStatus,
@@ -1586,7 +1375,7 @@ export async function getAuditLogsAction() {
 
 export async function sendWhatsAppBillingAction(customerId: string): Promise<{ success: boolean; message: string; whatsappUrl?: string }> {
   const user = await verifyUserRole(['Administrador', 'Gerente']);
-  const customer = await prisma.customer.findUnique({ where: { id: customerId } });
+  const customer = await prisma.customer.findUnique({ where: { id: customerId, storeId: user.storeId } });
   if (!customer) throw new Error("Cliente não encontrado.");
 
   const balance = customer.balance || 0;
@@ -1598,31 +1387,11 @@ export async function sendWhatsAppBillingAction(customerId: string): Promise<{ s
   const messageText = `Olá *${customer.name}*, você possui um saldo pendente de *R$ ${balance.toFixed(2)}* na Alvorada Smart Market. Para facilitar, você pode efetuar o pagamento via Pix utilizando a nossa chave comercial. Obrigado!`;
   const whatsappUrl = `https://wa.me/55${formattedPhone}?text=${encodeURIComponent(messageText)}`;
 
-  await logAuditEvent('Cobrança WhatsApp Enviada', `Disparo de cobrança simulado para ${customer.name} (${customer.phone}) no valor de R$ ${balance.toFixed(2)} por ${user.name}`);
+  await logAuditEvent('Cobrança WhatsApp Enviada', `Link de cobrança gerado para ${customer.name} (${customer.phone}) no valor de R$ ${balance.toFixed(2)} por ${user.name}`);
 
   return {
     success: true,
     message: `Mensagem gerada com sucesso para ${customer.name}!`,
     whatsappUrl,
   };
-}
-
-export async function generatePixPaymentAction(amount: number, customerId?: string): Promise<{ qrCodeData: string; copyPasteKey: string; paymentId: string }> {
-  const user = await getAuthenticatedUser();
-  const paymentId = `mp-pix-${Math.random().toString(36).substr(2, 9)}`;
-
-  const qrCodeData = `00020101021226870014br.gov.bcb.pix2565mp-pix-${paymentId}@mercadopago.com.br5204000053039865406${amount.toFixed(2)}5802BR5915AlvoradaMarket6009SaoPaulo62070503***6304`;
-  const copyPasteKey = qrCodeData;
-
-  await logAuditEvent('Simulação Pix MP Gerada', `Pix simulado gerado no valor de R$ ${amount.toFixed(2)} (ID: ${paymentId}) por ${user.name}`);
-
-  return {
-    qrCodeData,
-    copyPasteKey,
-    paymentId,
-  };
-}
-
-export async function checkPixStatusAction(paymentId: string): Promise<{ status: 'PENDING' | 'APPROVED' }> {
-  return { status: 'APPROVED' };
 }

@@ -2,10 +2,9 @@ import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
   output: 'standalone',
-  /* config options here */
-  typescript: {
-    ignoreBuildErrors: true,
-  },
+  outputFileTracingRoot: process.cwd(),
+  serverExternalPackages: ['genkit', '@genkit-ai/googleai'],
+  poweredByHeader: false,
   eslint: {
     ignoreDuringBuilds: true,
   },

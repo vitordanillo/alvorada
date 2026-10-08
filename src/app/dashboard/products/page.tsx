@@ -94,7 +94,8 @@ export default function ProductsPage() {
         // Preserve fields not on the form and override with new data
         const productToUpdate: Product = { 
             ...selectedProduct,
-            ...productData
+            ...productData,
+            expiryDate: productData.expiryDate?.toISOString(),
         };
         await updateProduct(productToUpdate);
         toast({ title: "Sucesso!", description: "Produto atualizado." });

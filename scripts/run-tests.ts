@@ -1,255 +1,77 @@
-import { PrismaClient } from '@prisma/client';
+import 'dotenv/config';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import type { Sale, User } from '../src/lib/types';
 
-const prisma = new PrismaClient();
-
-async function runTests() {
-  console.log("==================================================");
-  console.log("INICIANDO SUÍTE DE TESTES AUTOMATIZADOS (ALVORADA)");
-  console.log("==================================================");
-
-  let testStoreId1: string = '';
-  let testStoreId2: string = '';
-  let customerId1: string = '';
-  let productId1: string = '';
-  let sessionId1: string = '';
-  let userId1: string = '';
-  let userId2: string = '';
-
-  let passedTests = 0;
-  let failedTests = 0;
-
-  function assert(condition: boolean, message: string) {
-    if (condition) {
-      console.log(`  [OK] ${message}`);
-      passedTests++;
-    } else {
-      console.error(`  [ERRO] ${message}`);
-      failedTests++;
-    }
+async function main() {
+  const mainUrl = new URL(process.env.DATABASE_URL!);
+  const testUrl = new URL(process.env.TEST_DATABASE_URL!);
+  const target = (url: URL) => `${url.hostname}:${url.port}${url.pathname}/${url.searchParams.get('schema') ?? 'public'}`;
+  if (target(mainUrl) === target(testUrl) || !testUrl.searchParams.get('schema')?.endsWith('_test')) {
+    throw new Error('TEST_DATABASE_URL must identify a separate disposable schema ending in _test.');
   }
-
+  process.env.DATABASE_URL = testUrl.toString();
+  const { prisma } = await import('../src/lib/db');
+  const { processSale } = await import('../src/lib/sales-service');
+  const storeIds: string[] = [];
+  let passed = 0;
+  const check = (name: string, verify: () => void) => { verify(); passed++; console.log(`PASS ${name}`); };
   try {
-    // --- SETUP: Create test stores, users, customer, and product ---
-    console.log("\n[Setup] Preparando dados de teste...");
-
-    const store1 = await prisma.store.create({
-      data: {
-        name: "Test Store Alpha",
-        cnpj: "11.111.111/0001-11",
-        address: "Rua Alpha, 1",
-        phone: "(11) 91111-1111"
-      }
+    const store = await prisma.store.create({ data: { name: `TEST-${randomUUID()}` } });
+    const other = await prisma.store.create({ data: { name: `TEST-${randomUUID()}` } });
+    storeIds.push(store.id, other.id);
+    const user: User = { uid: randomUUID(), name: 'Test operator', email: `${randomUUID()}@test.invalid`, role: 'Administrador', storeId: store.id };
+    const product = await prisma.product.create({ data: {
+      name: 'Temporary test product', sku: randomUUID(), status: 'Ativo', category: 'Alimentos',
+      price: 25, averageCost: 15, stock: 50, minStock: 5, unit: 'UN', supplier: '', costHistory: [], storeId: store.id,
+    } });
+    const customer = await prisma.customer.create({ data: { name: 'Temporary test customer', phone: '', creditLimit: 100, balance: 0, loyaltyPoints: 100, tags: ['test'], storeId: store.id } });
+    const session = await prisma.cashRegisterSession.create({ data: {
+      openingBalance: 100, calculatedCashInDrawer: 100, totalSales: 0, salesByPaymentMethod: { Dinheiro: 0, Pix: 0, Cartão: 0 },
+      totalExpenses: 0, totalWithdrawals: 0, totalCreditPayments: 0, status: 'Aberto', openedByUid: user.uid, openedByName: user.name, storeId: store.id,
+    } });
+    const request = (quantity: number, payments: Sale['paymentMethods'], customerId = 'default') => ({
+      items: [{ productId: product.id, productName: 'Client supplied name', quantity, price: 25 }],
+      total: quantity * 25, customerId, customerName: 'Client supplied name', paymentMethods: payments,
     });
-    testStoreId1 = store1.id;
-
-    const store2 = await prisma.store.create({
-      data: {
-        name: "Test Store Beta",
-        cnpj: "22.222.222/0001-22",
-        address: "Rua Beta, 2",
-        phone: "(22) 92222-2222"
-      }
-    });
-    testStoreId2 = store2.id;
-
-    const user1 = await prisma.user.create({
-      data: {
-        uid: "test-user-alpha-uid",
-        name: "Gerente Alpha",
-        email: "gerente.alpha@test.com",
-        passwordHash: "dummy-hash",
-        role: "Gerente",
-        storeId: testStoreId1
-      }
-    });
-    userId1 = user1.uid;
-
-    const user2 = await prisma.user.create({
-      data: {
-        uid: "test-user-beta-uid",
-        name: "Gerente Beta",
-        email: "gerente.beta@test.com",
-        passwordHash: "dummy-hash",
-        role: "Gerente",
-        storeId: testStoreId2
-      }
-    });
-    userId2 = user2.uid;
-
-    const customer = await prisma.customer.create({
-      data: {
-        name: "Cliente Teste",
-        phone: "(11) 98888-8888",
-        email: "cliente@teste.com",
-        creditLimit: 500.00,
-        balance: 0.00,
-        loyaltyPoints: 100, // Starts with 100 points
-        storeId: testStoreId1,
-        tags: []
-      }
-    });
-    customerId1 = customer.id;
-
-    const product = await prisma.product.create({
-      data: {
-        name: "Produto Teste",
-        sku: "TEST-SKU-999",
-        status: "Ativo",
-        category: "Alimentos",
-        price: 25.00,
-        averageCost: 15.00,
-        stock: 50,
-        minStock: 5,
-        unit: "UN",
-        supplier: "Fornecedor Teste",
-        storeId: testStoreId1,
-        costHistory: []
-      }
-    });
-    productId1 = product.id;
-
-    const session = await prisma.cashRegisterSession.create({
-      data: {
-        openingTime: new Date(),
-        openingBalance: 100.00,
-        calculatedCashInDrawer: 100.00,
-        totalSales: 0,
-        salesByPaymentMethod: { Dinheiro: 0, Pix: 0, Cartão: 0 },
-        totalExpenses: 0,
-        totalWithdrawals: 0,
-        totalCreditPayments: 0,
-        status: "Aberto",
-        openedByUid: userId1,
-        openedByName: user1.name,
-        storeId: testStoreId1
-      }
-    });
-    sessionId1 = session.id;
-
-    // --- TEST 1: MULTI-TENANCY ISOLATION ---
-    console.log("\n[Teste 1] Validando Isolamento de Multi-tenancy...");
-    const productsStore1 = await prisma.product.findMany({ where: { storeId: testStoreId1 } });
-    const productsStore2 = await prisma.product.findMany({ where: { storeId: testStoreId2 } });
-    assert(productsStore1.length === 1 && productsStore1[0].id === productId1, "Store Alpha lista seus próprios produtos.");
-    assert(productsStore2.length === 0, "Store Beta não visualiza produtos da Store Alpha.");
-
-    // --- TEST 2: LOYALTY POINTS WORKFLOW ---
-    console.log("\n[Teste 2] Validando Regras de Pontos de Fidelidade...");
-    
-    // Simulate sale paying with points: 50 points used = R$ 5,00 discount
-    const saleData = {
-      items: [{ productId: productId1, productName: product.name, quantity: 2, price: product.price }],
-      total: 50.00,
-      customerId: customerId1,
-      customerName: customer.name,
-      paymentMethods: [
-        { method: 'Pontos' as const, amount: 5.00 }, // pays R$ 5,00 with points
-        { method: 'Dinheiro' as const, amount: 45.00 } // pays R$ 45,00 with cash
-      ]
-    };
-
-    // Process logic transacationally to test rules
-    await prisma.$transaction(async (tx) => {
-      // 1. Verify and deduct points
-      let pointsUsed = 0;
-      for (const payment of saleData.paymentMethods) {
-        if (payment.method === 'Pontos') pointsUsed += payment.amount * 10;
-      }
-      assert(pointsUsed === 50, "Cálculo correto de conversão de R$ em pontos (R$ 5 = 50 pontos).");
-
-      const cust = await tx.customer.findUnique({ where: { id: customerId1 } });
-      assert((cust?.loyaltyPoints || 0) >= pointsUsed, "Cliente tem saldo suficiente de pontos.");
-
-      await tx.customer.update({
-        where: { id: customerId1 },
-        data: { loyaltyPoints: { decrement: pointsUsed } }
-      });
-
-      // 2. Accumulate points for cash/card portion
-      let cashOrCardTotal = saleData.total;
-      for (const payment of saleData.paymentMethods) {
-        if (payment.method === 'Pontos') cashOrCardTotal -= payment.amount;
-      }
-      assert(cashOrCardTotal === 45.00, "Valor de acúmulo correto descontando resgate.");
-
-      const pointsEarned = Math.floor(cashOrCardTotal * 0.1); // 1 point per R$ 10
-      assert(pointsEarned === 4, "Acúmulo de pontos calculado corretamente (R$ 45 = 4 pontos).");
-
-      await tx.customer.update({
-        where: { id: customerId1 },
-        data: { loyaltyPoints: { increment: pointsEarned } }
-      });
-    });
-
-    const updatedCust = await prisma.customer.findUnique({ where: { id: customerId1 } });
-    assert(updatedCust?.loyaltyPoints === 54, `Saldo final de pontos correto: 100 - 50 + 4 = 54 (Atual: ${updatedCust?.loyaltyPoints}).`);
-
-    // --- TEST 3: CREDIT LIMIT ENFORCEMENT ---
-    console.log("\n[Teste 3] Validando Validação de Limite de Crédito...");
-    
-    const overlimitSale = {
-      total: 600.00,
-      paymentMethods: [{ method: 'Fiado' as const, amount: 600.00 }]
-    };
-
-    let threwError = false;
-    try {
-      const cust = await prisma.customer.findUnique({ where: { id: customerId1 } });
-      if (!cust) throw new Error("Cliente não encontrado");
-      const availableCredit = cust.creditLimit - cust.balance;
-      if (overlimitSale.paymentMethods[0].amount > availableCredit) {
-        throw new Error("Limite de crédito excedido!");
-      }
-    } catch (err: any) {
-      if (err.message.includes("excedido")) threwError = true;
-    }
-    assert(threwError, "Sistema lança exceção quando limite de crédito fiado é excedido.");
-
-    // --- TEST 4: WHATSAPP BILLING FORMAT ---
-    console.log("\n[Teste 4] Validando Mensagem de Cobrança do WhatsApp...");
-    const customerWithDebt = await prisma.customer.update({
-      where: { id: customerId1 },
-      data: { balance: 120.50 }
-    });
-    const messageText = `Olá *${customerWithDebt.name}*, você possui um saldo pendente de *R$ ${customerWithDebt.balance.toFixed(2)}* na Alvorada Smart Market. Para facilitar, você pode efetuar o pagamento via Pix utilizando a nossa chave comercial. Obrigado!`;
-    assert(messageText.includes("Cliente Teste") && messageText.includes("R$ 120.50"), "Formato de mensagem e saldo da cobrança corretos.");
-
-    // --- TEST 5: SIMULATED MERCADO PAGO PIX QR CODE ---
-    console.log("\n[Teste 5] Validando Payload Pix Simulado...");
-    const paymentId = "mp-pix-12345abc";
-    const qrCodeData = `00020101021226870014br.gov.bcb.pix2565mp-pix-${paymentId}@mercadopago.com.br520400005303986540645.005802BR5915AlvoradaMarket6009SaoPaulo62070503***6304`;
-    assert(qrCodeData.startsWith("000201") && qrCodeData.includes("mercadopago") && qrCodeData.includes("45.00"), "Código Copia e Cola estruturado com formato válido do Pix Banco Central.");
-
-  } catch (error) {
-    console.error("Erro inesperado durante a execução dos testes:", error);
+    const cashSale = await processSale(request(2, [{ method: 'Dinheiro', amount: 100 }]), session.id, user);
+    const cash = await prisma.cashRegisterSession.findUniqueOrThrow({ where: { id: session.id } });
+    check('cash change is removed from drawer receipts', () => { assert.equal(cash.calculatedCashInDrawer, 150); assert.equal((cashSale.paymentMethods as any[])[0].amount, 50); });
+    check('product data comes from the database', () => assert.equal((cashSale.items as any[])[0].productName, product.name));
+    const pointsSale = await processSale(request(2, [{ method: 'Pontos', amount: 5 }, { method: 'Dinheiro', amount: 45 }], customer.id), session.id, user);
+    const updatedCustomer = await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } });
+    check('loyalty points are charged and accrued in the sale transaction', () => { assert.equal(updatedCustomer.loyaltyPoints, 54); assert.equal(pointsSale.total, 50); });
+    const beforeInvalid = await prisma.sale.count({ where: { storeId: store.id } });
+    await assert.rejects(processSale(request(5, [{ method: 'Fiado', amount: 125 }], customer.id), session.id, user), /crédito/);
+    check('credit over limit is rejected without creating a sale', () => assert.ok(true));
+    await assert.rejects(processSale(request(1, [{ method: 'Pix', amount: 25 }]), session.id, user), /Pix/);
+    check('unconfigured Pix cannot settle a sale', () => assert.ok(true));
+    await assert.rejects(processSale(request(1, [{ method: 'Dinheiro', amount: 25 }]), session.id, { ...user, storeId: other.id }), /caixa/);
+    check('another store cannot use the cash session', () => assert.ok(true));
+    const tampered = request(1, [{ method: 'Dinheiro', amount: 25 }]);
+    tampered.items[0].price = 1;
+    await assert.rejects(processSale(tampered, session.id, user), /preço/);
+    const afterInvalid = await prisma.sale.count({ where: { storeId: store.id } });
+    check('invalid sales leave no rows behind', () => assert.equal(afterInvalid, beforeInvalid));
+    await prisma.product.update({ where: { id: product.id }, data: { stock: 3 } });
+    const concurrent = await Promise.allSettled([
+      processSale(request(2, [{ method: 'Dinheiro', amount: 50 }]), session.id, user),
+      processSale(request(2, [{ method: 'Dinheiro', amount: 50 }]), session.id, user),
+    ]);
+    const remaining = await prisma.product.findUniqueOrThrow({ where: { id: product.id } });
+    check('concurrent sales cannot oversell available stock', () => { assert.equal(concurrent.filter(r => r.status === 'fulfilled').length, 1); assert.equal(remaining.stock, 1); });
+    await prisma.cashRegisterSession.update({ where: { id: session.id }, data: { status: 'Fechado' } });
+    await assert.rejects(processSale(request(1, [{ method: 'Dinheiro', amount: 25 }]), session.id, user), /caixa/);
+    check('closed cash sessions reject new sales', () => assert.ok(true));
+    console.log(`${passed} integration checks passed in the disposable schema.`);
   } finally {
-    // --- CLEANUP: Delete all test records in reverse dependency order ---
-    console.log("\n[Cleanup] Removendo dados de teste...");
     try {
-      if (sessionId1) await prisma.cashRegisterSession.delete({ where: { id: sessionId1 } });
-      if (productId1) await prisma.product.delete({ where: { id: productId1 } });
-      if (customerId1) await prisma.customer.delete({ where: { id: customerId1 } });
-      if (userId1) await prisma.user.delete({ where: { uid: userId1 } });
-      if (userId2) await prisma.user.delete({ where: { uid: userId2 } });
-      if (testStoreId1) await prisma.store.delete({ where: { id: testStoreId1 } });
-      if (testStoreId2) await prisma.store.delete({ where: { id: testStoreId2 } });
-      console.log("Limpeza concluída com sucesso.");
-    } catch (cleanupErr) {
-      console.error("Erro na limpeza dos dados de teste:", cleanupErr);
-    }
-  }
-
-  console.log("\n==================================================");
-  console.log("RESULTADO GERAL DOS TESTES:");
-  console.log(`  Passaram: ${passedTests}`);
-  console.log(`  Falharam: ${failedTests}`);
-  console.log("==================================================");
-
-  if (failedTests > 0) {
-    process.exit(1);
-  } else {
-    process.exit(0);
+      const where = { storeId: { in: storeIds } };
+      await prisma.$transaction([
+        prisma.sale.deleteMany({ where }), prisma.cashRegisterSession.deleteMany({ where }),
+        prisma.product.deleteMany({ where }), prisma.customer.deleteMany({ where }), prisma.store.deleteMany({ where: { id: { in: storeIds } } }),
+      ]);
+    } finally { await prisma.$disconnect(); }
   }
 }
-
-runTests();
+main().catch(error => { console.error(error instanceof Error ? error.message : 'Integration checks failed.'); process.exitCode = 1; });

@@ -8,15 +8,24 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 interface UserManagementTableProps {
   users: User[];
   onUpdateRole: (uid: string, role: User['role']) => Promise<void>;
+  onCreateUser: (name: string, email: string, password: string, role: User['role']) => Promise<void>;
 }
 
-export function UserManagementTable({ users, onUpdateRole }: UserManagementTableProps) {
+export function UserManagementTable({ users, onUpdateRole, onCreateUser }: UserManagementTableProps) {
   const { user: currentUser } = useAuth();
   const { toast } = useToast();
+  const [name, setName] = React.useState('');
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [role, setRole] = React.useState<User['role']>('Operador de Caixa');
+  const [creating, setCreating] = React.useState(false);
 
   const handleRoleChange = async (uid: string, newRole: User['role']) => {
     try {
@@ -38,6 +47,23 @@ export function UserManagementTable({ users, onUpdateRole }: UserManagementTable
 
   const roles: User['role'][] = ['Administrador', 'Gerente', 'Operador de Caixa', 'Estoquista'];
 
+  const handleCreateUser = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCreating(true);
+    try {
+      await onCreateUser(name, email, password, role);
+      setName('');
+      setEmail('');
+      setPassword('');
+      toast({ title: 'Usuário criado', description: 'A conta foi adicionada à loja.' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não foi possível criar o usuário.';
+      toast({ variant: 'destructive', title: 'Erro ao criar usuário', description: message });
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <Card className="rounded-2xl border-none shadow-sm bg-card">
       <CardHeader>
@@ -45,6 +71,32 @@ export function UserManagementTable({ users, onUpdateRole }: UserManagementTable
         <CardDescription>Altere as permissões de acesso de cada usuário do sistema.</CardDescription>
       </CardHeader>
       <CardContent>
+        <form onSubmit={handleCreateUser} className="mb-6 grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="new-user-name">Nome</Label>
+            <Input id="new-user-name" autoComplete="name" required value={name} onChange={(event) => setName(event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="new-user-email">E-mail</Label>
+            <Input id="new-user-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="new-user-password">Senha inicial (mínimo 12 caracteres)</Label>
+            <Input id="new-user-password" type="password" autoComplete="new-password" minLength={12} required value={password} onChange={(event) => setPassword(event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Permissão</Label>
+            <Select value={role} onValueChange={(value: User['role']) => setRole(value)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {roles.filter((value) => value !== 'Administrador').map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="sm:col-span-2">
+            <Button type="submit" disabled={creating}>{creating ? 'Criando…' : 'Adicionar usuário'}</Button>
+          </div>
+        </form>
         <Table>
           <TableHeader>
             <TableRow>

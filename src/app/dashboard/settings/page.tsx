@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import * as React from "react";
 
 export default function SettingsPage() {
-  const { allUsers, loading, updateUserRole, user, updateCancellationPassword } = useAppContext();
+  const { allUsers, loading, updateUserRole, createUser, user, updateCancellationPassword } = useAppContext();
 
   if (user?.role !== 'Administrador') {
      return (
@@ -45,7 +45,7 @@ export default function SettingsPage() {
         </Card>
       ) : (
         <div className="grid gap-6 lg:grid-cols-2">
-          <UserManagementTable users={allUsers} onUpdateRole={updateUserRole} />
+          <UserManagementTable users={allUsers} onUpdateRole={updateUserRole} onCreateUser={createUser} />
           <SecuritySettingsCard onUpdatePassword={updateCancellationPassword} />
         </div>
       )}

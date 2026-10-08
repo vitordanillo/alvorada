@@ -17,7 +17,7 @@ interface SecuritySettingsCardProps {
 }
 
 const passwordSchema = z.object({
-  newPassword: z.string().min(4, 'A senha deve ter pelo menos 4 caracteres.'),
+  newPassword: z.string().min(12, 'A senha deve ter pelo menos 12 caracteres.').max(256),
   confirmPassword: z.string(),
 }).refine((data) => data.newPassword === data.confirmPassword, {
   message: "As senhas não coincidem.",

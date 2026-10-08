@@ -13,6 +13,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import { getCurrentUserAction } from '@/lib/db-actions';
 
 // Define the input schema for the restock suggestion flow
 const SuggestRestockInputSchema = z.object({
@@ -108,5 +109,15 @@ const suggestRestockFlow = ai.defineFlow(
 
 // Exported function to trigger the restock suggestion flow
 export async function suggestRestock(input: SuggestRestockInput): Promise<SuggestRestockOutput> {
-  return suggestRestockFlow(input);
+  const user = await getCurrentUserAction();
+  if (!user || !['Administrador', 'Gerente', 'Estoquista'].includes(user.role)) throw new Error('Acesso negado.');
+  const validated = SuggestRestockInputSchema.parse(input);
+  if (!process.env.GOOGLE_GENAI_API_KEY) {
+    return { restockSuggestions: validated.products.filter(p => p.currentStock < p.minimumStock).map(p => ({
+      productId: p.productId, productName: p.productName, unit: p.unit,
+      quantityToRestock: Math.max(0, p.minimumStock - p.currentStock),
+      reasoning: 'Reposição calculada para atingir o estoque mínimo. O recurso de IA ainda não está configurado.',
+    })) };
+  }
+  return suggestRestockFlow(validated);
 }

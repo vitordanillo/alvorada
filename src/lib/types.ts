@@ -92,7 +92,7 @@ export type User = {
 };
 
 export type SystemSettings = {
-  cancellationPassword?: string;
+  cancellationPasswordConfigured?: boolean;
 };
 
 export type CashTransaction = {

@@ -38,7 +38,7 @@ import {
   updatePurchaseOrderAction,
   receivePurchaseOrderAction,
   loginUserAction,
-  registerUserAction,
+  createUserAction,
   logoutUserAction,
 } from '@/lib/db-actions';
 
@@ -96,6 +96,7 @@ interface AppContextType {
   updateSupplier: (supplier: Supplier) => Promise<void>;
   deleteSupplier: (supplierId: string) => Promise<void>;
   updateUserRole: (uid: string, role: User['role']) => Promise<void>;
+  createUser: (name: string, email: string, password: string, role: User['role']) => Promise<void>;
   updateCancellationPassword: (newPassword: string) => Promise<void>;
   addPayable: (payable: Omit<AccountsPayable, 'id' | 'status' | 'registeredBy' | 'paymentDate' | 'dateCreated'>) => Promise<void>;
   updatePayable: (payableId: string, data: Omit<AccountsPayable, 'id' | 'status' | 'registeredBy' | 'paymentDate' | 'dateCreated'>) => Promise<void>;
@@ -105,7 +106,6 @@ interface AppContextType {
   updatePurchaseOrder: (orderId: string, orderData: Omit<PurchaseOrder, 'id' | 'dateCreated' | 'status' | 'registeredBy'>) => Promise<void>;
   receivePurchaseOrder: (orderId: string, receivedItems: { productId: string, productName: string, quantityReceived: number, cost: number }[]) => Promise<void>;
   login: (email: string, password: string) => Promise<User>;
-  register: (name: string, email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
 }
 
@@ -555,6 +555,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     await updateUserRoleAction(uid, role);
     await refreshData();
   };
+
+  const createUser = async (name: string, email: string, password: string, role: User['role']) => {
+    const created = await createUserAction(name, email, password, role);
+    setAllUsers((current) => [...current, created]);
+  };
   
   const updateCancellationPassword = async (newPassword: string) => {
     await updateCancellationPasswordAction(newPassword);
@@ -608,12 +613,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return loggedUser;
   };
 
-  const register = async (name: string, email: string, password: string) => {
-    const newUser = await registerUserAction(name, email, password);
-    setUser(newUser);
-    return newUser;
-  };
-
   const logout = async () => {
     await logoutUserAction();
     setUser(null);
@@ -627,9 +626,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       addProduct, updateProduct, setProductStatus, addStockToProducts,
       adjustStock, addCustomer, updateCustomer, deleteCustomer, addCreditPayment, addSale, cancelSale, openCashRegister,
       closeCashRegister, correctCashClosing, correctOpeningBalance, reopenCashRegister, cancelCashRegisterOpening,
-      addCashTransaction, addSupplier, updateSupplier, deleteSupplier, updateUserRole, updateCancellationPassword,
+      addCashTransaction, addSupplier, updateSupplier, deleteSupplier, updateUserRole, createUser, updateCancellationPassword,
       addPayable, updatePayable, deletePayable, markPayableAsPaid, addPurchaseOrder, updatePurchaseOrder,
-      receivePurchaseOrder, login, register, logout
+      receivePurchaseOrder, login, logout
     }}>
       {children}
     </AppContext.Provider>

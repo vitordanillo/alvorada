@@ -86,8 +86,6 @@ export default function POSPage() {
   const [currentPaymentAmount, setCurrentPaymentAmount] = React.useState('');
 
   const [isOnline, setIsOnline] = React.useState(true);
-  const [isPixSimulating, setIsPixSimulating] = React.useState(false);
-  const [pixData, setPixData] = React.useState<{ qrCodeData: string; copyPasteKey: string; paymentId: string } | null>(null);
 
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -312,40 +310,11 @@ export default function POSPage() {
     }
 
     if (method === 'Pix') {
-      if (typeof window !== 'undefined' && !navigator.onLine) {
-        toast({
-          title: "Pix Registrado Offline",
-          description: "Aguardando confirmação de rede para sincronizar.",
-          className: "bg-orange-100 border-orange-500 text-orange-800"
-        });
-        setPayments(prev => [...prev, { method, amount }]);
-        setCurrentPaymentAmount('');
-        return;
-      }
-
-      setIsPixSimulating(true);
-      try {
-        const { generatePixPaymentAction } = await import('@/lib/db-actions');
-        const simulatedPayment = await generatePixPaymentAction(amount, selectedCustomer.id);
-        setPixData(simulatedPayment);
-        
-        await new Promise(resolve => setTimeout(resolve, 2500));
-        
-        toast({
-          title: "Pix Aprovado!",
-          description: "Pagamento recebido com sucesso via Mercado Pago.",
-          className: "bg-green-100 border-green-500 text-green-800"
-        });
-        
-        setPayments(prev => [...prev, { method, amount }]);
-        setCurrentPaymentAmount('');
-      } catch (err) {
-        console.error("Failed to simulate Pix:", err);
-        toast({ variant: 'destructive', title: 'Erro ao gerar Pix' });
-      } finally {
-        setIsPixSimulating(false);
-        setPixData(null);
-      }
+      toast({
+        variant: 'destructive',
+        title: 'Pix ainda não está configurado',
+        description: 'Use outro meio de pagamento até conectar um provedor Pix real.',
+      });
       return;
     }
 
@@ -604,49 +573,13 @@ export default function POSPage() {
                            </div>
                        </div>
                        
-                        {isPixSimulating && pixData && (
-                          <div className="p-4 bg-muted/60 rounded-lg border-primary/20 border flex flex-col items-center justify-center space-y-3">
-                            <div className="relative w-36 h-36 bg-white border rounded flex items-center justify-center p-2">
-                              <svg className="w-full h-full text-foreground" viewBox="0 0 100 100">
-                                <rect width="100" height="100" fill="white" />
-                                <rect x="10" y="10" width="20" height="20" fill="black" />
-                                <rect x="15" y="15" width="10" height="10" fill="white" />
-                                <rect x="70" y="10" width="20" height="20" fill="black" />
-                                <rect x="75" y="15" width="10" height="10" fill="white" />
-                                <rect x="10" y="70" width="20" height="20" fill="black" />
-                                <rect x="15" y="75" width="10" height="10" fill="white" />
-                                <rect x="40" y="40" width="20" height="20" fill="black" />
-                                <rect x="45" y="45" width="10" height="10" fill="white" />
-                                <rect x="40" y="70" width="10" height="10" fill="black" />
-                                <rect x="70" y="40" width="10" height="10" fill="black" />
-                              </svg>
-                              <div className="absolute inset-0 bg-white/70 flex flex-col items-center justify-center">
-                                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                                <span className="text-[10px] font-semibold mt-1">Aguardando pagamento...</span>
-                              </div>
-                            </div>
-                            <div className="text-center w-full">
-                              <p className="text-xs font-semibold text-muted-foreground mb-1">Chave Pix Copia e Cola:</p>
-                              <code className="text-[10px] break-all block bg-background p-2 rounded border max-h-12 overflow-y-auto">
-                                {pixData.copyPasteKey}
-                              </code>
-                              <Button variant="ghost" size="sm" className="mt-1 text-xs h-8" onClick={() => {
-                                navigator.clipboard.writeText(pixData.copyPasteKey);
-                                toast({ title: "Copiado!" });
-                              }}>
-                                Copiar Código Pix
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-
                         <div className="grid grid-cols-2 gap-2">
-                           <Button variant="outline" className="h-12" onClick={() => handleAddPayment('Dinheiro')} disabled={isPixSimulating}><Coins className="mr-2"/> Dinheiro</Button>
-                           <Button variant="outline" className="h-12" onClick={() => handleAddPayment('Cartão')} disabled={isPixSimulating}><CreditCard className="mr-2"/> Cartão</Button>
-                           <Button variant="outline" className="h-12" onClick={() => handleAddPayment('Pix')} disabled={isPixSimulating}><Pizza className="mr-2"/> Pix (Mercado Pago)</Button>
-                           <Button variant="outline" className="h-12" onClick={() => handleAddPayment('Fiado')} disabled={isPixSimulating}><FilePen className="mr-2"/> Fiado</Button>
+                           <Button variant="outline" className="h-12" onClick={() => handleAddPayment('Dinheiro')}><Coins className="mr-2"/> Dinheiro</Button>
+                           <Button variant="outline" className="h-12" onClick={() => handleAddPayment('Cartão')}><CreditCard className="mr-2"/> Cartão</Button>
+                           <Button variant="outline" className="h-12" onClick={() => handleAddPayment('Pix')}><Pizza className="mr-2"/> Pix indisponível</Button>
+                           <Button variant="outline" className="h-12" onClick={() => handleAddPayment('Fiado')}><FilePen className="mr-2"/> Fiado</Button>
                             {selectedCustomer.id !== 'default' && (selectedCustomer.loyaltyPoints || 0) > 0 && (
-                              <Button variant="outline" className="h-12 col-span-2 border-primary text-primary hover:bg-primary/5" onClick={() => handleAddPayment('Pontos')} disabled={isPixSimulating}>
+                              <Button variant="outline" className="h-12 col-span-2 border-primary text-primary hover:bg-primary/5" onClick={() => handleAddPayment('Pontos')}>
                                 <Gift className="mr-2 h-4 w-4"/> Usar Pontos (Saldo: {selectedCustomer.loyaltyPoints} pts = R$ {((selectedCustomer.loyaltyPoints || 0) / 10).toFixed(2).replace('.', ',')})
                               </Button>
                             )}
