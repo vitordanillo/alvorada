@@ -323,9 +323,19 @@ GRANT SELECT,INSERT ON "Organization","PlatformAuditLog" TO alvorada_runtime;
 GRANT SELECT ON "User" TO alvorada_runtime;
 GRANT INSERT(uid,name,email,"passwordHash",role,"avatarUrl","storeId","createdAt","updatedAt","isPlatformAdmin") ON "User" TO alvorada_runtime;
 
-CREATE POLICY platform_config ON "SystemConfig" FOR ALL TO alvorada_runtime
-USING (coalesce((select current_setting('app.platform_admin',true)),'false')='true')
-WITH CHECK (coalesce((select current_setting('app.platform_admin',true)),'false')='true');
+ALTER POLICY tenant_isolation ON "SystemConfig"
+USING (coalesce((select current_setting('app.platform_admin',true)),'false')='true' OR ("storeId"=(select current_setting('app.store_id',true)) AND EXISTS(SELECT 1 FROM "Store" s WHERE s.id="SystemConfig"."storeId" AND s.status='Ativa')))
+WITH CHECK (coalesce((select current_setting('app.platform_admin',true)),'false')='true' OR ("storeId"=(select current_setting('app.store_id',true)) AND EXISTS(SELECT 1 FROM "Store" s WHERE s.id="SystemConfig"."storeId" AND s.status='Ativa')));
+CREATE INDEX "AccountsPayable_storeId_cashSessionId_idx" ON "AccountsPayable"("storeId","cashSessionId");
+CREATE INDEX "AccountsPayable_storeId_supplierId_idx" ON "AccountsPayable"("storeId","supplierId");
+CREATE INDEX "ProductChangeLog_storeId_productId_idx" ON "ProductChangeLog"("storeId","productId");
+CREATE INDEX "PurchaseOrder_storeId_supplierId_idx" ON "PurchaseOrder"("storeId","supplierId");
+CREATE INDEX "Sale_storeId_cashRegisterSessionId_idx" ON "Sale"("storeId","cashRegisterSessionId");
+CREATE INDEX "StockAdjustmentLog_storeId_productId_idx" ON "StockAdjustmentLog"("storeId","productId");
+CREATE INDEX "StockEntryLog_storeId_purchaseOrderId_idx" ON "StockEntryLog"("storeId","purchaseOrderId");
+CREATE INDEX "StockEntryLog_storeId_supplierId_idx" ON "StockEntryLog"("storeId","supplierId");
+CREATE INDEX "Sale_storeId_customerId_idx" ON "Sale"("storeId","customerId");
+CREATE INDEX "CashTransaction_storeId_customerId_idx" ON "CashTransaction"("storeId","customerId");
 
 COMMIT;
 

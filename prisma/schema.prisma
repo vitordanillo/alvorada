@@ -164,6 +164,8 @@ model Sale {
 
   @@unique([storeId, clientRequestId])
   @@index([storeId, date])
+  @@index([storeId, cashRegisterSessionId])
+  @@index([storeId, customerId])
 }
 
 model CashRegisterSession {
@@ -208,6 +210,7 @@ model CashTransaction {
   storeSnapshot    Json?
 
   @@index([storeId, sessionId, date])
+  @@index([storeId, customerId])
 }
 
 model StockAdjustmentLog {
@@ -225,6 +228,7 @@ model StockAdjustmentLog {
   store          Store    @relation(fields: [storeId], references: [id], onDelete: Restrict)
 
   @@index([storeId, date])
+  @@index([storeId, productId])
 }
 
 model StockEntryLog {
@@ -242,6 +246,8 @@ model StockEntryLog {
   store            Store    @relation(fields: [storeId], references: [id], onDelete: Restrict)
 
   @@index([storeId, date])
+  @@index([storeId, purchaseOrderId])
+  @@index([storeId, supplierId])
 }
 
 model ProductChangeLog {
@@ -256,6 +262,7 @@ model ProductChangeLog {
   store         Store    @relation(fields: [storeId], references: [id], onDelete: Restrict)
 
   @@index([storeId, date])
+  @@index([storeId, productId])
 }
 
 model AccountsPayable {
@@ -276,6 +283,8 @@ model AccountsPayable {
   store            Store     @relation(fields: [storeId], references: [id], onDelete: Restrict)
 
   @@index([storeId, dueDate])
+  @@index([storeId, cashSessionId])
+  @@index([storeId, supplierId])
 }
 
 model PurchaseOrder {
@@ -296,6 +305,7 @@ model PurchaseOrder {
 
   @@unique([storeId, id])
   @@index([storeId, dateCreated])
+  @@index([storeId, supplierId])
 }
 
 model AuditLog {

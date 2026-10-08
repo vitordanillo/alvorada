@@ -1411,7 +1411,7 @@ export async function receivePurchaseOrderAction(
   });
 }
 
-export async function logAuditEvent(action: string, details: string): Promise<void> {
+async function logAuditEvent(action: string, details: string): Promise<void> {
   return withAuthenticatedAction(async () => {
   try {
     const user = await getAuthenticatedUser();
