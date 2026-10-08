@@ -28,7 +28,7 @@ O cache e as filas offline usam um banco IndexedDB diferente para cada usuário 
 
 `node deploy/restore-snapshot.cjs <arquivo> alvorada_restore_<identificador>` restaura e compara todos os registros numa cópia privada, cuja criação é feita pela administração do banco. Esse comando exige um schema vazio e recusa o nome de produção. O schema restaurado serve para conferir os dados; a publicação de uma recuperação exige aplicar as migrations e permissões correspondentes antes de apontar o aplicativo para ele.
 
-Para publicar: gerar candidato em diretório separado; guardar backup final e versão anterior; parar somente o processo Alvorada; aplicar `prisma migrate deploy` usando `DIRECT_DATABASE_URL`; iniciar o candidato com a credencial runtime; conferir saúde e login; salvar o PM2. Migrações futuras devem manter compatibilidade ou prever recuperação explícita. O PM2 global e os demais aplicativos da VPS não fazem parte desse procedimento.
+Para publicar: gerar candidato em diretório separado; guardar backup final e versão anterior; parar somente o processo Alvorada; aplicar `prisma migrate deploy` usando `DIRECT_DATABASE_URL`; registrar o novo diretório no PM2 com a credencial runtime; conferir saúde e login; salvar o PM2 e apontar a tarefa de inicialização para a versão ativa. Preserve o diretório anterior: no Windows, processos podem manter a pasta bloqueada para renomeação. A versão atual está em `C:\Sites\AlvoradaSmartMarket\app-multistore`. Migrações futuras devem manter compatibilidade ou prever recuperação explícita. O PM2 global e os demais aplicativos da VPS não fazem parte desse procedimento.
 
 ## Limites atuais
 

@@ -44,7 +44,7 @@ Sem chave Google configurada, as sugestões de reposição usam o estoque mínim
 
 ## VPS Windows
 
-A instalação dedicada utiliza `C:\Sites\AlvoradaSmartMarket\app`, porta 3070 e processo PM2 `alvorada-smart-market`. O PM2 usa `C:\Sites\AlvoradaSmartMarket\pm2`; a tarefa de inicialização chama `deploy/resurrect.ps1`. A credencial runtime fica em `.env`; a de migração e backup, em `.env.migrate`. Ambos ficam fora do Git e têm ACL privada. O launcher carrega apenas `.env`.
+A instalação ativa utiliza `C:\Sites\AlvoradaSmartMarket\app-multistore`, porta 3070 e processo PM2 `alvorada-smart-market`. A pasta `app` preserva a versão anterior e não deve ser usada para iniciar a aplicação atual. O PM2 usa `C:\Sites\AlvoradaSmartMarket\pm2`; a tarefa de inicialização chama `deploy/resurrect.ps1` da versão ativa. A credencial runtime fica em `.env`; a de migração e backup, em `.env.migrate`. Ambos ficam fora do Git e têm ACL privada. O launcher carrega apenas `.env`.
 Execute `node deploy/prepare-pm2.cjs` para preparar uma cópia própria do PM2 em `runtime/pm2`, ao lado de `app`. Ela usa canais Windows exclusivos da Alvorada; os comandos de gerenciamento devem chamar esse executável, e não o PM2 global.
 
 `npm run build` gera o standalone e copia seus arquivos estáticos. Inicie-o com `deploy/ecosystem.config.cjs`; os logs ficam na pasta `logs` ao lado de `app`. `GET /api/health` verifica a conexão PostgreSQL. Para o acesso HTTP por IP solicitado, configure `AUTH_COOKIE_SECURE=false`; para HTTPS, use `true`.
