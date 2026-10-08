@@ -29,7 +29,7 @@ export default function LoginPage() {
     try {
       const user=await login(email, password);
       toast({ title: 'Login bem-sucedido!', description: 'Redirecionando para o painel...' });
-      router.push(user.storeId?'/dashboard':'/dashboard/platform');
+      router.push(user.isPlatformAdmin?'/admin':'/dashboard');
     } catch (cause) {
       setError('E-mail ou senha inválidos. Tente novamente.');
       toast({ variant: 'destructive', title: 'Falha no login', description: 'Confira seus dados e tente novamente.' });

@@ -36,6 +36,7 @@ model Store {
   accountsPayable     AccountsPayable[]
   purchaseOrders      PurchaseOrder[]
   auditLogs           AuditLog[]
+  subscription        Subscription?
 
   @@index([organizationId])
 }
@@ -45,6 +46,8 @@ model User {
   name            String
   email           String            @unique
   isPlatformAdmin Boolean           @default(false)
+  disabled        Boolean           @default(false)
+  sessionVersion  Int               @default(0)
   memberships     StoreMembership[]
   passwordHash    String
   role            String // 'Administrador' | 'Gerente' | 'Operador de Caixa' | 'Estoquista'
@@ -350,4 +353,49 @@ model PlatformAuditLog {
   targetStoreId String?
 
   @@index([date])
+}
+
+model Plan {
+  id String @id @default(uuid())
+  name String
+  priceCents Int
+  maxUsers Int @default(5)
+  active Boolean @default(true)
+  description String @default("")
+  createdAt DateTime @default(now())
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id String @id @default(uuid())
+  storeId String @unique
+  store Store @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  planId String
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  priceCents Int
+  maxUsers Int
+  status String @default("Ativa")
+  startedAt DateTime @default(now())
+  nextDue DateTime
+  billingDay Int
+  notes String @default("")
+  updatedAt DateTime @updatedAt
+  invoices Invoice[]
+  @@index([status, nextDue])
+}
+
+model Invoice {
+  id String @id @default(uuid())
+  subscriptionId String
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  dueDate DateTime
+  amountCents Int
+  status String @default("Pendente")
+  paidAt DateTime?
+  paymentMethod String?
+  paymentReference String?
+  notes String @default("")
+  createdAt DateTime @default(now())
+  @@unique([subscriptionId, dueDate])
+  @@index([status, dueDate])
 }

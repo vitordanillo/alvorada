@@ -78,7 +78,7 @@ export function SidebarNav() {
       </div>
       {(!isClient || loadingAuth) ? renderSkeletons() : (
         <SidebarMenu className="flex-1">
-          {user?.isPlatformAdmin && <SidebarMenuItem><SidebarMenuButton asChild isActive={pathname==='/dashboard/platform'} tooltip="Administrar lojas"><Link href="/dashboard/platform"><Building2/><span>Administrar lojas</span></Link></SidebarMenuButton></SidebarMenuItem>}
+          {user?.isPlatformAdmin && <SidebarMenuItem><SidebarMenuButton asChild isActive={pathname==='/admin'} tooltip="Administrar plataforma"><Link href="/admin"><Building2/><span>Administrar plataforma</span></Link></SidebarMenuButton></SidebarMenuItem>}
           {visibleLinks.map((link) => (
             <SidebarMenuItem key={link.href}>
               <SidebarMenuButton

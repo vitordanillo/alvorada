@@ -7,4 +7,4 @@ if (!process.env.DATABASE_URL || !process.env.AUTH_SESSION_SECRET || process.env
 process.env.NODE_ENV = 'production';
 process.env.HOSTNAME = process.env.ALVORADA_HOST || '0.0.0.0';
 process.env.PORT = process.env.ALVORADA_PORT || '3070';
-require(path.join(root, '.next', 'standalone', 'server.js'));
+require(path.join(root, process.env.ALVORADA_BUILD_DIR || '.next', 'standalone', 'server.js'));

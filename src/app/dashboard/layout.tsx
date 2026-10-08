@@ -46,6 +46,7 @@ export default function DashboardLayout({
         <SidebarNav />
       </Sidebar>
       <SidebarInset className="bg-secondary">
+        {user.isPlatformAdmin && <div className="flex flex-wrap items-center justify-between gap-2 bg-blue-950 px-6 py-3 text-sm text-white"><span>Acesso de suporte · {user.store?.name} · ações atribuídas à conta global</span><a href="/admin" className="rounded border border-white/30 px-3 py-1 hover:bg-white/10">Voltar à administração</a></div>}
         <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background px-6">
             <SidebarTrigger className="md:hidden" />
             <div className="flex-1">

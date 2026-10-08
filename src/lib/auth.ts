@@ -5,7 +5,7 @@ import type { Store, StoreMembership, User } from './types';
 
 const SESSION_COOKIE = 'alvorada-session';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
-type Session = { uid: string; storeId?: string; exp: number };
+type Session = { uid: string; storeId?: string; exp: number; version?: number };
 
 function secret(): string {
   const value = process.env.AUTH_SESSION_SECRET;
@@ -28,7 +28,9 @@ function readSession(token?: string): Session | null {
 }
 
 export async function setAuthCookie(uid: string, storeId?: string) {
-  const payload=Buffer.from(JSON.stringify({ uid,storeId,exp:Date.now()+SESSION_MAX_AGE*1000 })).toString('base64url');
+  const record=await withDbContext({uid,email:'',storeId:'',platformAdmin:false},()=>prisma.user.findUnique({where:{uid},select:{sessionVersion:true,disabled:true}}));
+  if(!record || record.disabled) throw new Error('Conta desabilitada.');
+  const payload=Buffer.from(JSON.stringify({ uid,storeId,version:record.sessionVersion,exp:Date.now()+SESSION_MAX_AGE*1000 })).toString('base64url');
   const signature=createHmac('sha256',secret()).update(payload).digest('base64url');
   (await cookies()).set(SESSION_COOKIE,`${payload}.${signature}`,{
     path:'/',httpOnly:true,secure:process.env.AUTH_COOKIE_SECURE!=='false' && process.env.NODE_ENV==='production',sameSite:'lax',maxAge:SESSION_MAX_AGE,
@@ -43,10 +45,10 @@ export const mapStore = (store: any): Store => ({
 export async function resolveUser(uid: string, requestedStoreId?: string): Promise<User | null> {
   return withDbContext({ uid,email:'',storeId:'',platformAdmin:false },async()=>{
     const record=await prisma.user.findUnique({where:{uid}});
-    if (!record) return null;
+    if (!record || record.disabled) return null;
     const memberships=await prisma.storeMembership.findMany({where:{userId:uid},include:{store:true},orderBy:{createdAt:'asc'}});
     const stores: StoreMembership[]=memberships.map(m=>({...mapStore(m.store),role:m.role as User['role']}));
-    const selectedId=requestedStoreId ?? record.storeId ?? stores.find(s=>s.status==='Ativa')?.id;
+    const selectedId=record.isPlatformAdmin ? requestedStoreId : requestedStoreId ?? stores.find(s=>s.id===record.storeId && s.status==='Ativa')?.id ?? stores.find(s=>s.status==='Ativa')?.id;
     let selected=stores.find(s=>s.id===selectedId && s.status==='Ativa');
     if (!selected && record.isPlatformAdmin && requestedStoreId) {
       const store=await withDbContext({platformAdmin:true},()=>prisma.store.findUnique({where:{id:requestedStoreId}}));
@@ -61,6 +63,10 @@ export async function currentUser(): Promise<User | null> {
   const cached=currentDbUser();
   if (cached) return cached;
   const session=readSession((await cookies()).get(SESSION_COOKIE)?.value);
+  if(session) {
+    const record=await withDbContext({uid:session.uid,email:'',storeId:'',platformAdmin:false},()=>prisma.user.findUnique({where:{uid:session.uid},select:{sessionVersion:true,disabled:true}}));
+    if(!record || record.disabled || record.sessionVersion!==(session.version??0)) return null;
+  }
   const user=session ? await resolveUser(session.uid,session.storeId) : null;
   return user && (user.storeId || user.isPlatformAdmin) ? user : null;
 }

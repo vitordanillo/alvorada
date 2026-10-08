@@ -8,6 +8,7 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
 import { recordLoginAttempt, clearLoginAttempts } from './login-rate-limit';
 import { processSale } from './sales-service';
+import { ensureUserCapacity } from './billing';
 import type {
   Product,
   Customer,
@@ -228,6 +229,7 @@ export async function createUserAction(name: string, email: string, password: st
   const passwordHash = await bcrypt.hash(password, 12);
 
   const user = await withTransaction(async tx => {
+    await ensureUserCapacity(admin.storeId!);
     const created = await tx.user.create({
     data: {
       uid,
