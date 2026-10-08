@@ -27,9 +27,9 @@ export default function LoginPage() {
     setError('');
 
     try {
-      await login(email, password);
+      const user=await login(email, password);
       toast({ title: 'Login bem-sucedido!', description: 'Redirecionando para o painel...' });
-      router.push('/dashboard');
+      router.push(user.storeId?'/dashboard':'/dashboard/platform');
     } catch (cause) {
       setError('E-mail ou senha inválidos. Tente novamente.');
       toast({ variant: 'destructive', title: 'Falha no login', description: 'Confira seus dados e tente novamente.' });
@@ -44,8 +44,8 @@ export default function LoginPage() {
       <Card className="mx-auto w-full max-w-sm rounded-2xl bg-background shadow-2xl">
         <CardHeader className="space-y-2 text-center">
           <div className="mx-auto inline-block"><Logo className="h-16 w-16" /></div>
-          <CardTitle className="font-headline text-3xl font-bold">Bem-vindo de volta</CardTitle>
-          <CardDescription>Entre com seu e-mail para acessar o Alvorada Smart Market.</CardDescription>
+          <CardTitle className="font-headline text-3xl font-bold">Alvorada</CardTitle>
+          <CardDescription>Gestão de lojas por Firma Conecta.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">

@@ -5,6 +5,7 @@ import type { Product, Customer, Sale, Supplier, User, CashRegisterSession, Cash
 import type { ProductFormData } from '@/components/products/product-form';
 import {
   getCurrentUserAction,
+  getLegacyOfflineSessionsAction,
   getInitialDataAction,
   getCashTransactionsAction,
   addProductAction,
@@ -107,11 +108,15 @@ interface AppContextType {
   receivePurchaseOrder: (orderId: string, receivedItems: { productId: string, productName: string, quantityReceived: number, cost: number }[]) => Promise<void>;
   login: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
+  reloadUser: () => Promise<void>;
+  dataError: string;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
+  const [dataError,setDataError]=useState('');
+  const requestVersion=React.useRef(0);
   const [user, setUser] = useState<User | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
@@ -144,12 +149,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     purchaseOrders: true,
   });
 
+  const cacheScope=user?.storeId ? `${user.uid}:${user.storeId}` : '';
   const activeSession = cashSessions.find(s => s.status === 'Aberto') || null;
 
   const refreshData = async () => {
-    if (!user) return;
+    if (!user?.storeId) return;
+    const version=++requestVersion.current;
+    setDataError('');
     try {
-      const data = await getInitialDataAction();
+      const data = await getInitialDataAction(user?.storeId);
+      if(version!==requestVersion.current) return;
       setProducts(data.products);
       setCustomers(data.customers);
       setSales(data.sales);
@@ -165,18 +174,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       // Save to IndexedDB local cache for offline usage
       import('@/lib/offline-db').then((db) => {
-        db.saveToCache('products', data.products);
-        db.saveToCache('customers', data.customers);
-        db.saveToCache('sales', data.sales);
-        db.saveToCache('suppliers', data.suppliers);
-        db.saveToCache('cashSessions', data.cashSessions);
-        db.saveToCache('stockAdjustmentLogs', data.stockAdjustmentLogs);
-        db.saveToCache('allUsers', data.allUsers);
-        db.saveToCache('systemSettings', data.systemSettings);
-        db.saveToCache('stockEntryLogs', data.stockEntryLogs);
-        db.saveToCache('productChangeLogs', data.productChangeLogs);
-        db.saveToCache('accountsPayable', data.accountsPayable);
-        db.saveToCache('purchaseOrders', data.purchaseOrders);
+        db.saveToCache(cacheScope, 'products', data.products);
+        db.saveToCache(cacheScope, 'customers', data.customers);
+        db.saveToCache(cacheScope, 'sales', data.sales);
+        db.saveToCache(cacheScope, 'suppliers', data.suppliers);
+        db.saveToCache(cacheScope, 'cashSessions', data.cashSessions);
+        db.saveToCache(cacheScope, 'stockAdjustmentLogs', data.stockAdjustmentLogs);
+        db.saveToCache(cacheScope, 'allUsers', data.allUsers);
+        db.saveToCache(cacheScope, 'systemSettings', data.systemSettings);
+        db.saveToCache(cacheScope, 'stockEntryLogs', data.stockEntryLogs);
+        db.saveToCache(cacheScope, 'productChangeLogs', data.productChangeLogs);
+        db.saveToCache(cacheScope, 'accountsPayable', data.accountsPayable);
+        db.saveToCache(cacheScope, 'purchaseOrders', data.purchaseOrders);
       }).catch(err => console.error("Cache import error:", err));
 
       setLoading(prev => ({
@@ -195,22 +204,29 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         purchaseOrders: false,
       }));
     } catch (error) {
-      console.warn("Could not fetch data online. Trying offline cache...", error);
+      if(version!==requestVersion.current) return;
+      if(typeof window==='undefined' || navigator.onLine) {
+        setDataError(error instanceof Error ? error.message : 'Falha ao carregar os dados. Atualize a página.');
+        return;
+      }
+      console.warn('Conexão indisponível; carregando o cache desta loja.');
       // Attempt load from IndexedDB cache
       try {
         const db = await import('@/lib/offline-db');
-        const cachedProducts = await db.getFromCache<Product[]>('products') || [];
-        const cachedCustomers = await db.getFromCache<Customer[]>('customers') || [];
-        const cachedSales = await db.getFromCache<Sale[]>('sales') || [];
-        const cachedSuppliers = await db.getFromCache<Supplier[]>('suppliers') || [];
-        const cachedCashSessions = await db.getFromCache<CashRegisterSession[]>('cashSessions') || [];
-        const cachedLogs = await db.getFromCache<StockAdjustmentLog[]>('stockAdjustmentLogs') || [];
-        const cachedUsers = await db.getFromCache<User[]>('allUsers') || [];
-        const cachedSettings = await db.getFromCache<SystemSettings>('systemSettings');
-        const cachedStockEntryLogs = await db.getFromCache<StockEntryLog[]>('stockEntryLogs') || [];
-        const cachedProductChangeLogs = await db.getFromCache<ProductChangeLog[]>('productChangeLogs') || [];
-        const cachedPayable = await db.getFromCache<AccountsPayable[]>('accountsPayable') || [];
-        const cachedOrders = await db.getFromCache<PurchaseOrder[]>('purchaseOrders') || [];
+        const cachedProducts = await db.getFromCache<Product[]>(cacheScope, 'products') || [];
+        const cachedCustomers = await db.getFromCache<Customer[]>(cacheScope, 'customers') || [];
+        const cachedSales = await db.getFromCache<Sale[]>(cacheScope, 'sales') || [];
+        const cachedSuppliers = await db.getFromCache<Supplier[]>(cacheScope, 'suppliers') || [];
+        const cachedCashSessions = await db.getFromCache<CashRegisterSession[]>(cacheScope, 'cashSessions') || [];
+        const cachedLogs = await db.getFromCache<StockAdjustmentLog[]>(cacheScope, 'stockAdjustmentLogs') || [];
+        const cachedUsers = await db.getFromCache<User[]>(cacheScope, 'allUsers') || [];
+        const cachedSettings = await db.getFromCache<SystemSettings>(cacheScope, 'systemSettings');
+        const cachedStockEntryLogs = await db.getFromCache<StockEntryLog[]>(cacheScope, 'stockEntryLogs') || [];
+        const cachedProductChangeLogs = await db.getFromCache<ProductChangeLog[]>(cacheScope, 'productChangeLogs') || [];
+        const cachedPayable = await db.getFromCache<AccountsPayable[]>(cacheScope, 'accountsPayable') || [];
+        const cachedOrders = await db.getFromCache<PurchaseOrder[]>(cacheScope, 'purchaseOrders') || [];
+
+        if(version!==requestVersion.current) return;
 
         setProducts(cachedProducts);
         setCustomers(cachedCustomers);
@@ -248,9 +264,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // Synchronize offline sales queue
   const syncOfflineSales = async () => {
+    if(!user?.storeId) return;
     try {
       const db = await import('@/lib/offline-db');
-      const queued = await db.getQueuedSales();
+      const legacy=await db.getLegacyQueuedSales();
+      if(legacy.length) {
+        const owned=await getLegacyOfflineSessionsAction([...new Set(legacy.map(s=>s.activeSessionId))],user.storeId);
+        await db.recoverLegacySales(cacheScope,legacy.filter(s=>owned.includes(s.activeSessionId)));
+      }
+      const queued = await db.getQueuedSales(cacheScope);
       if (queued.length === 0) return;
 
       console.log(`Syncing ${queued.length} offline sales...`);
@@ -258,8 +280,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       for (const item of queued) {
         try {
-          await addSaleAction(item.saleData, item.activeSessionId);
-          await db.removeQueuedSale(item.id);
+          await addSaleAction(item.saleData, item.activeSessionId, user?.storeId);
+          await db.removeQueuedSale(cacheScope, item.id);
           successCount++;
         } catch (err) {
           console.error(`Failed to sync queued sale ${item.id}:`, err);
@@ -305,14 +327,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // On user change: Load or clear database listings
   useEffect(() => {
-    if (user) {
+    if (user?.storeId) {
       refreshData();
     } else {
+      requestVersion.current++;
       setProducts([]);
       setCustomers([]);
       setSales([]);
       setSuppliers([]);
       setCashSessions([]);
+      setCashTransactions([]);
       setStockAdjustmentLogs([]);
       setStockEntryLogs([]);
       setProductChangeLogs([]);
@@ -333,7 +357,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (activeSession) {
       setLoading(prev => ({ ...prev, cashTransactions: true }));
-      getCashTransactionsAction(activeSession.id)
+      getCashTransactionsAction(activeSession.id, user?.storeId)
         .then((trans) => {
           setCashTransactions(trans);
         })
@@ -351,53 +375,53 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // Mutations
   const addProduct = async (productData: ProductFormData) => {
-    await addProductAction(productData);
+    await addProductAction(productData, user?.storeId);
     await refreshData();
   };
 
   const updateProduct = async (updatedProductData: Product) => {
-    await updateProductAction(updatedProductData);
+    await updateProductAction(updatedProductData, user?.storeId);
     await refreshData();
   };
   
   const setProductStatus = async (productId: string, status: 'Ativo' | 'Inativo') => {
-    await setProductStatusAction(productId, status);
+    await setProductStatusAction(productId, status, user?.storeId);
     await refreshData();
   };
 
   const addStockToProducts = async (items: { productId: string, quantity: number, cost: number }[], supplier: { id: string, name: string }) => {
-    await addStockToProductsAction(items, supplier);
+    await addStockToProductsAction(items, supplier, user?.storeId);
     await refreshData();
   };
 
   const adjustStock = async (productId: string, newQuantity: number, reason: StockAdjustmentLog['reason'], notes?: string) => {
-    await adjustStockAction(productId, newQuantity, reason, notes || '');
+    await adjustStockAction(productId, newQuantity, reason, notes || '', user?.storeId);
     await refreshData();
   };
 
   const addCustomer = async (customerData: Omit<Customer, 'id'|'balance'>) => {
-    await addCustomerAction(customerData);
+    await addCustomerAction(customerData, user?.storeId);
     await refreshData();
   };
 
   const updateCustomer = async (updatedCustomer: Customer) => {
-    await updateCustomerAction(updatedCustomer);
+    await updateCustomerAction(updatedCustomer, user?.storeId);
     await refreshData();
   };
   
   const deleteCustomer = async (customerId: string) => {
-    await deleteCustomerAction(customerId);
+    await deleteCustomerAction(customerId, user?.storeId);
     await refreshData();
   };
 
   const addCreditPayment = async (customerId: string, amount: number): Promise<CashTransaction> => {
     if (!activeSession) throw new Error("Não há um caixa aberto. Impossível registrar o pagamento.");
 
-    const transaction = await addCreditPaymentAction(customerId, amount, activeSession.id);
+    const transaction = await addCreditPaymentAction(customerId, amount, activeSession.id, user?.storeId);
     await refreshData();
     
     // Refresh cash transactions list
-    const trans = await getCashTransactionsAction(activeSession.id);
+    const trans = await getCashTransactionsAction(activeSession.id, user?.storeId);
     setCashTransactions(trans);
 
     return transaction;
@@ -407,11 +431,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (!activeSession) throw new Error("Não há um caixa aberto. Impossível registrar a venda.");
 
     try {
-      const sale = await addSaleAction(saleData, activeSession.id);
+      const sale = await addSaleAction(saleData, activeSession.id, user?.storeId);
       await refreshData();
 
       // Refresh cash transactions list
-      const trans = await getCashTransactionsAction(activeSession.id);
+      const trans = await getCashTransactionsAction(activeSession.id, user?.storeId);
       setCashTransactions(trans);
 
       return sale;
@@ -433,7 +457,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         };
 
         // Save queued sale
-        await db.queueOfflineSale({
+        await db.queueOfflineSale(cacheScope, {
           id: tempId,
           saleData,
           activeSessionId: activeSession.id,
@@ -449,7 +473,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             }
             return p;
           });
-          db.saveToCache('products', updated);
+          db.saveToCache(cacheScope, 'products', updated);
           return updated;
         });
 
@@ -471,7 +495,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               }
               return c;
             });
-            db.saveToCache('customers', updated);
+            db.saveToCache(cacheScope, 'customers', updated);
             return updated;
           });
         }
@@ -486,124 +510,124 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const cancelSale = async (saleId: string, reason: string, passwordAttempt: string) => {
-    await cancelSaleAction(saleId, reason, passwordAttempt);
+    await cancelSaleAction(saleId, reason, passwordAttempt, user?.storeId);
     await refreshData();
 
     if (activeSession) {
-      const trans = await getCashTransactionsAction(activeSession.id);
+      const trans = await getCashTransactionsAction(activeSession.id, user?.storeId);
       setCashTransactions(trans);
     }
   };
 
   const openCashRegister = async (openingBalance: number) => {
-    await openCashRegisterAction(openingBalance);
+    await openCashRegisterAction(openingBalance, user?.storeId);
     await refreshData();
   };
 
   const closeCashRegister = async (closingBalance: number) => {
     if (!activeSession) throw new Error("Nenhum caixa aberto para fechar.");
-    await closeCashRegisterAction(activeSession.id, closingBalance);
+    await closeCashRegisterAction(activeSession.id, closingBalance, user?.storeId);
     await refreshData();
   };
 
   const correctCashClosing = async (sessionId: string, newClosingBalance: number) => {
-    await correctCashClosingAction(sessionId, newClosingBalance);
+    await correctCashClosingAction(sessionId, newClosingBalance, user?.storeId);
     await refreshData();
   };
 
   const correctOpeningBalance = async (newOpeningBalance: number) => {
     if (!activeSession) throw new Error("Não há caixa ativo para corrigir.");
-    await correctOpeningBalanceAction(activeSession.id, newOpeningBalance);
+    await correctOpeningBalanceAction(activeSession.id, newOpeningBalance, user?.storeId);
     await refreshData();
   };
 
   const reopenCashRegister = async (sessionId: string) => {
-    await reopenCashRegisterAction(sessionId);
+    await reopenCashRegisterAction(sessionId, user?.storeId);
     await refreshData();
   };
 
   const cancelCashRegisterOpening = async (sessionId: string) => {
-    await cancelCashRegisterOpeningAction(sessionId);
+    await cancelCashRegisterOpeningAction(sessionId, user?.storeId);
     await refreshData();
   };
 
   const addCashTransaction = async (transactionData: Omit<CashTransaction, 'id' | 'date' | 'sessionId' | 'registeredBy'>) => {
     if (!activeSession) throw new Error("Nenhum caixa ativo.");
-    await addCashTransactionAction(transactionData, activeSession.id);
+    await addCashTransactionAction(transactionData, activeSession.id, user?.storeId);
     await refreshData();
 
-    const trans = await getCashTransactionsAction(activeSession.id);
+    const trans = await getCashTransactionsAction(activeSession.id, user?.storeId);
     setCashTransactions(trans);
   };
 
   const addSupplier = async (supplierData: Omit<Supplier, 'id'>) => {
-    await addSupplierAction(supplierData);
+    await addSupplierAction(supplierData, user?.storeId);
     await refreshData();
   };
   
   const updateSupplier = async (updatedSupplier: Supplier) => {
-    await updateSupplierAction(updatedSupplier);
+    await updateSupplierAction(updatedSupplier, user?.storeId);
     await refreshData();
   };
   
   const deleteSupplier = async (supplierId: string) => {
-    await deleteSupplierAction(supplierId);
+    await deleteSupplierAction(supplierId, user?.storeId);
     await refreshData();
   };
 
   const updateUserRole = async (uid: string, role: User['role']) => {
-    await updateUserRoleAction(uid, role);
+    await updateUserRoleAction(uid, role, user?.storeId);
     await refreshData();
   };
 
   const createUser = async (name: string, email: string, password: string, role: User['role']) => {
-    const created = await createUserAction(name, email, password, role);
+    const created = await createUserAction(name, email, password, role, user?.storeId);
     setAllUsers((current) => [...current, created]);
   };
   
   const updateCancellationPassword = async (newPassword: string) => {
-    await updateCancellationPasswordAction(newPassword);
+    await updateCancellationPasswordAction(newPassword, user?.storeId);
     await refreshData();
   };
 
   const addPayable = async (payableData: Omit<AccountsPayable, 'id' | 'status' | 'registeredBy' | 'paymentDate' | 'dateCreated'>) => {
-    await addPayableAction(payableData);
+    await addPayableAction(payableData, user?.storeId);
     await refreshData();
   };
 
   const updatePayable = async (payableId: string, data: Omit<AccountsPayable, 'id' | 'status' | 'registeredBy' | 'paymentDate' | 'dateCreated'>) => {
-    await updatePayableAction(payableId, data);
+    await updatePayableAction(payableId, data, user?.storeId);
     await refreshData();
   };
   
   const deletePayable = async (payableId: string) => {
-    await deletePayableAction(payableId);
+    await deletePayableAction(payableId, user?.storeId);
     await refreshData();
   };
 
   const markPayableAsPaid = async (payableId: string, fromCashRegister: boolean) => {
-    await markPayableAsPaidAction(payableId, fromCashRegister, activeSession ? activeSession.id : null);
+    await markPayableAsPaidAction(payableId, fromCashRegister, activeSession ? activeSession.id : null, user?.storeId);
     await refreshData();
 
     if (activeSession && fromCashRegister) {
-      const trans = await getCashTransactionsAction(activeSession.id);
+      const trans = await getCashTransactionsAction(activeSession.id, user?.storeId);
       setCashTransactions(trans);
     }
   };
 
   const addPurchaseOrder = async (orderData: Omit<PurchaseOrder, 'id' | 'dateCreated' | 'status' | 'registeredBy'>) => {
-    const orderId = await addPurchaseOrderAction(orderData);
+    const orderId = await addPurchaseOrderAction(orderData, user?.storeId);
     await refreshData();
     return orderId;
   };
   
   const updatePurchaseOrder = async (orderId: string, orderData: Omit<PurchaseOrder, 'id' | 'dateCreated' | 'status' | 'registeredBy' | 'items' | 'totalCost'> & { items: any; totalCost: any}) => {
-    await updatePurchaseOrderAction(orderId, orderData);
+    await updatePurchaseOrderAction(orderId, orderData, user?.storeId);
     await refreshData();
   };
 
   const receivePurchaseOrder = async (orderId: string, receivedItems: { productId: string, productName: string, quantityReceived: number, cost: number }[]) => {
-    await receivePurchaseOrderAction(orderId, receivedItems);
+    await receivePurchaseOrderAction(orderId, receivedItems, user?.storeId);
     await refreshData();
   };
 
@@ -612,6 +636,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setUser(loggedUser);
     return loggedUser;
   };
+
+  const reloadUser = async () => { setUser(await getCurrentUserAction()); };
 
   const logout = async () => {
     await logoutUserAction();
@@ -628,7 +654,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       closeCashRegister, correctCashClosing, correctOpeningBalance, reopenCashRegister, cancelCashRegisterOpening,
       addCashTransaction, addSupplier, updateSupplier, deleteSupplier, updateUserRole, createUser, updateCancellationPassword,
       addPayable, updatePayable, deletePayable, markPayableAsPaid, addPurchaseOrder, updatePurchaseOrder,
-      receivePurchaseOrder, login, logout
+      receivePurchaseOrder, login, logout, reloadUser, dataError
     }}>
       {children}
     </AppContext.Provider>

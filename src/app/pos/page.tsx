@@ -54,6 +54,8 @@ export default function POSPage() {
     if (!loadingAuth) {
       if (!user) {
         router.push('/');
+      } else if(!user.storeId) {
+        router.replace(user.isPlatformAdmin?'/dashboard/platform':'/');
       } else if (user.role !== 'Administrador' && user.role !== 'Gerente' && user.role !== 'Operador de Caixa') {
         toast({
           variant: 'destructive',
@@ -64,14 +66,6 @@ export default function POSPage() {
       }
     }
   }, [user, loadingAuth, router, toast]);
-
-  if (loadingAuth || !user || (user.role !== 'Administrador' && user.role !== 'Gerente' && user.role !== 'Operador de Caixa')) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
 
   const [selectedCustomer, setSelectedCustomer] = React.useState<Customer>(defaultCustomer);
   const [isCustomerDialogOpen, setIsCustomerDialogOpen] = React.useState(false);
@@ -339,6 +333,10 @@ export default function POSPage() {
   const isConfirmDisabled = isFinishing || remainingAmount > 0.001;
 
 
+  if (loadingAuth || !user?.storeId || !['Administrador','Gerente','Operador de Caixa'].includes(user.role)) {
+    return <div className="flex min-h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div>;
+  }
+
   return (
     <>
       <div className="grid grid-cols-1 lg:grid-cols-3 h-screen">
@@ -350,6 +348,7 @@ export default function POSPage() {
                   <ArrowLeft className="h-5 w-5" />
                   Voltar ao Dashboard
               </Link>
+              <span className="hidden text-sm text-muted-foreground xl:inline">{user.store?.name}</span>
               <span className={cn(
                 "inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full",
                 isOnline ? "bg-green-100 text-green-800" : "bg-orange-100 text-orange-800"

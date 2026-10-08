@@ -19,7 +19,7 @@ export default function CustomerDetailPage() {
   const params = useParams();
   const customerId = params.id as string;
   
-  const { customers, sales, loading } = useAppContext();
+  const { customers, sales, loading, user } = useAppContext();
   const [isClient, setIsClient] = React.useState(false);
 
   const [paymentHistory, setPaymentHistory] = React.useState<CashTransaction[]>([]);
@@ -30,9 +30,9 @@ export default function CustomerDetailPage() {
   }, []);
 
   React.useEffect(() => {
-    if (!customerId) return;
+    if (!customerId || !user?.storeId) return;
     setLoadingHistory(true);
-    getPaymentHistoryAction(customerId)
+    getPaymentHistoryAction(customerId, user.storeId)
       .then((payments) => {
         setPaymentHistory(payments);
       })
@@ -42,7 +42,7 @@ export default function CustomerDetailPage() {
       .finally(() => {
         setLoadingHistory(false);
       });
-  }, [customerId]);
+  }, [customerId, user?.storeId]);
 
 
   const customer = React.useMemo(() => 

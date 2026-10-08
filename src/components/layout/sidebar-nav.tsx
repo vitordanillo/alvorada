@@ -17,6 +17,7 @@ import {
   AreaChart,
   ClipboardList,
   Wallet,
+  Building2,
   ClipboardPlus,
   type LucideIcon,
 } from 'lucide-react';
@@ -57,7 +58,7 @@ export function SidebarNav() {
     setIsClient(true);
   }, []);
 
-  const visibleLinks = allLinks.filter(link => user && link.roles.includes(user.role));
+  const visibleLinks = allLinks.filter(link => user?.storeId && link.roles.includes(user.role));
 
   const renderSkeletons = () => (
     <SidebarMenu className="flex-1">
@@ -73,10 +74,11 @@ export function SidebarNav() {
     <div className="flex h-full flex-col p-4">
       <div className="flex items-center gap-2 pb-4 mb-4 border-b">
         <Logo className="w-8 h-8" />
-        <span className="font-bold font-headline text-lg group-data-[collapsible=icon]:hidden">Alvorada</span>
+        <div className="group-data-[collapsible=icon]:hidden"><span className="font-bold font-headline text-lg">Alvorada</span><p className="text-xs text-muted-foreground">por Firma Conecta</p></div>
       </div>
       {(!isClient || loadingAuth) ? renderSkeletons() : (
         <SidebarMenu className="flex-1">
+          {user?.isPlatformAdmin && <SidebarMenuItem><SidebarMenuButton asChild isActive={pathname==='/dashboard/platform'} tooltip="Administrar lojas"><Link href="/dashboard/platform"><Building2/><span>Administrar lojas</span></Link></SidebarMenuButton></SidebarMenuItem>}
           {visibleLinks.map((link) => (
             <SidebarMenuItem key={link.href}>
               <SidebarMenuButton

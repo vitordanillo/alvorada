@@ -86,7 +86,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Dashboard" description="Bem-vindo ao painel do Alvorada Smart Market.">
+      <PageHeader title="Dashboard" description="Bem-vindo ao Alvorada.">
         <DateRangePicker date={dateRange} onDateChange={setDateRange} />
       </PageHeader>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

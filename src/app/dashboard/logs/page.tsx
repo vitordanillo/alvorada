@@ -53,7 +53,7 @@ export default function LogsPage() {
       try {
         setLoadingAudit(true);
         const { getAuditLogsAction } = await import('@/lib/db-actions');
-        const fetched = await getAuditLogsAction();
+        const fetched = await getAuditLogsAction(user?.storeId);
         setAuditLogs(fetched);
       } catch (err) {
         console.error("Failed to load audit logs:", err);

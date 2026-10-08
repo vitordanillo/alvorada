@@ -6,6 +6,10 @@ export async function processSale(
   activeSessionId: string,
   user: User
 ) {
+  if (!user.storeId) throw new Error('Selecione uma loja ativa.');
+  const storeId=user.storeId;
+  const clientRequestId=saleData.clientRequestId;
+  if (clientRequestId && (typeof clientRequestId!=='string' || clientRequestId.length>80)) throw new Error('Identificador da venda inválido.');
   if (!Array.isArray(saleData.items) || !saleData.items.length || saleData.items.length > 200) throw new Error('Carrinho inválido.');
   if (!Array.isArray(saleData.paymentMethods) || !saleData.paymentMethods.length || saleData.paymentMethods.length > 20) throw new Error('Informe o pagamento.');
   const amounts = new Map<string, number>();
@@ -14,6 +18,12 @@ export async function processSale(
     amounts.set(payment.method, (amounts.get(payment.method) ?? 0) + Math.round(payment.amount * 100));
   }
   return withTransaction(async (tx) => {
+    if (clientRequestId) {
+      const existing=await tx.sale.findUnique({where:{storeId_clientRequestId:{storeId,clientRequestId}}});
+      if (existing) return existing;
+    }
+    const store=await tx.store.findUnique({where:{id:storeId}});
+    if (!store || store.status!=='Ativa') throw new Error('Loja indisponível.');
     const session = await tx.cashRegisterSession.findUnique({ where: { id: activeSessionId, storeId: user.storeId } });
     if (!session || session.status !== 'Aberto') throw new Error('Abra o caixa antes de registrar a venda.');
     const productIds = saleData.items.map(item => item.productId);
@@ -47,7 +57,9 @@ export async function processSale(
     const sale = await tx.sale.create({ data: {
       items, total, totalCost, totalProfit: total - totalCost,
       customerId: customer?.id ?? 'default', customerName: customer?.name ?? 'Consumidor final',
-      paymentMethods, cashRegisterSessionId: session.id, status: 'Concluída', storeId: user.storeId,
+      paymentMethods, cashRegisterSessionId: session.id, status: 'Concluída', storeId,
+      clientRequestId,
+      storeSnapshot:{id:store.id,name:store.name,cnpj:store.cnpj ?? '',address:store.address ?? '',phone:store.phone ?? ''},
     } });
     for (const item of items) await tx.product.update({ where: { id: item.productId, storeId: user.storeId }, data: { stock: { decrement: item.quantity } } });
     const methods = session.salesByPaymentMethod as Record<string, number>;

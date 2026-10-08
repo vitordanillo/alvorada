@@ -1,5 +1,18 @@
 
 
+export type Store = {
+  id: string;
+  name: string;
+  cnpj: string;
+  address: string;
+  phone: string;
+  status: 'Ativa' | 'Suspensa';
+  organizationId: string;
+};
+
+export type StoreMembership = Store & { role: User['role'] };
+export type StoreSnapshot = Pick<Store, 'id' | 'name' | 'cnpj' | 'address' | 'phone'>;
+
 export type Product = {
   id: string;
   name: string;
@@ -21,6 +34,8 @@ export type Product = {
 };
 
 export type Sale = {
+  storeSnapshot?: StoreSnapshot;
+  clientRequestId?: string;
   id: string;
   date: string;
   items: {
@@ -89,6 +104,9 @@ export type User = {
   role: 'Administrador' | 'Gerente' | 'Operador de Caixa' | 'Estoquista';
   avatarUrl?: string;
   storeId?: string;
+  store?: Store;
+  stores?: StoreMembership[];
+  isPlatformAdmin?: boolean;
 };
 
 export type SystemSettings = {
@@ -96,6 +114,7 @@ export type SystemSettings = {
 };
 
 export type CashTransaction = {
+  storeSnapshot?: StoreSnapshot;
   id: string;
   sessionId: string;
   type: 'Despesa' | 'Sangria' | 'Recebimento Fiado';

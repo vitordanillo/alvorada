@@ -1,6 +1,7 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
 }
 
 generator client {
@@ -16,39 +17,53 @@ model Store {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users                 User[]
-  products              Product[]
-  suppliers             Supplier[]
-  customers             Customer[]
-  sales                 Sale[]
-  cashSessions          CashRegisterSession[]
-  cashTransactions      CashTransaction[]
-  stockAdjustmentLogs   StockAdjustmentLog[]
-  stockEntryLogs        StockEntryLog[]
-  productChangeLogs     ProductChangeLog[]
-  accountsPayable       AccountsPayable[]
-  purchaseOrders        PurchaseOrder[]
-  auditLogs             AuditLog[]
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  status         String            @default("Ativa")
+  memberships    StoreMembership[]
+  settings       SystemConfig[]
+
+  users               User[]
+  products            Product[]
+  suppliers           Supplier[]
+  customers           Customer[]
+  sales               Sale[]
+  cashSessions        CashRegisterSession[]
+  cashTransactions    CashTransaction[]
+  stockAdjustmentLogs StockAdjustmentLog[]
+  stockEntryLogs      StockEntryLog[]
+  productChangeLogs   ProductChangeLog[]
+  accountsPayable     AccountsPayable[]
+  purchaseOrders      PurchaseOrder[]
+  auditLogs           AuditLog[]
+
+  @@index([organizationId])
 }
 
 model User {
-  uid          String   @id
-  name         String
-  email        String   @unique
-  passwordHash String
-  role         String   // 'Administrador' | 'Gerente' | 'Operador de Caixa' | 'Estoquista'
-  avatarUrl    String?  @db.VarChar(500)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  storeId      String?
-  store        Store?   @relation(fields: [storeId], references: [id])
+  uid             String            @id
+  name            String
+  email           String            @unique
+  isPlatformAdmin Boolean           @default(false)
+  memberships     StoreMembership[]
+  passwordHash    String
+  role            String // 'Administrador' | 'Gerente' | 'Operador de Caixa' | 'Estoquista'
+  avatarUrl       String?           @db.VarChar(500)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  storeId         String?
+  store           Store?            @relation(fields: [storeId], references: [id])
 
   @@index([storeId])
 }
 
 model SystemConfig {
-  key   String @id
-  value Json   // Hashed security settings and counters.
+  key     String @id
+  value   Json
+  storeId String
+  store   Store  @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  @@index([storeId])
 }
 
 model Product {
@@ -56,12 +71,12 @@ model Product {
   name        String
   description String?   @db.Text
   brand       String?
-  sku         String    @unique
-  status      String    // 'Ativo' | 'Inativo'
-  category    String    // 'Alimentos' | 'Limpeza' | 'Higiene' | 'Bebidas' | 'Outros'
+  sku         String
+  status      String // 'Ativo' | 'Inativo'
+  category    String // 'Alimentos' | 'Limpeza' | 'Higiene' | 'Bebidas' | 'Outros'
   price       Float
   averageCost Float
-  costHistory Json      // Array<{ date: string, quantity: number, cost: number }>
+  costHistory Json // Array<{ date: string, quantity: number, cost: number }>
   stock       Float
   minStock    Float
   unit        String
@@ -71,9 +86,11 @@ model Product {
   expiryDate  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  storeId     String?
-  store       Store?    @relation(fields: [storeId], references: [id])
+  storeId     String
+  store       Store     @relation(fields: [storeId], references: [id], onDelete: Restrict)
 
+  @@unique([storeId, sku])
+  @@unique([storeId, id])
   @@index([storeId])
 }
 
@@ -92,9 +109,10 @@ model Supplier {
   email       String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  storeId     String?
-  store       Store?   @relation(fields: [storeId], references: [id])
+  storeId     String
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Restrict)
 
+  @@unique([storeId, id])
   @@index([storeId])
 }
 
@@ -112,35 +130,39 @@ model Customer {
   creditLimit   Float
   balance       Float
   notes         String?   @db.Text
-  tags          Json      // string[]
+  tags          Json // string[]
   loyaltyPoints Float     @default(0)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  storeId       String?
-  store         Store?    @relation(fields: [storeId], references: [id])
+  storeId       String
+  store         Store     @relation(fields: [storeId], references: [id], onDelete: Restrict)
 
+  @@unique([storeId, id])
   @@index([storeId])
 }
 
 model Sale {
   id                    String    @id @default(uuid())
   date                  DateTime  @default(now())
-  items                 Json      // Array<{ productId: string, productName: string, quantity: number, price: number, costAtTimeOfSale?: number }>
+  items                 Json // Array<{ productId: string, productName: string, quantity: number, price: number, costAtTimeOfSale?: number }>
   total                 Float
   totalCost             Float?
   totalProfit           Float?
   customerId            String
   customerName          String
-  paymentMethods        Json      // Array<{ method: 'Dinheiro' | 'Pix' | 'Cartão' | 'Fiado', amount: number }>
+  paymentMethods        Json // Array<{ method: 'Dinheiro' | 'Pix' | 'Cartão' | 'Fiado', amount: number }>
   cashRegisterSessionId String?
-  status                String    // 'Concluída' | 'Cancelada'
+  status                String // 'Concluída' | 'Cancelada'
   cancellationReason    String?   @db.Text
   cancelledByUid        String?
   cancelledByName       String?
   cancellationDate      DateTime?
-  storeId               String?
-  store                 Store?    @relation(fields: [storeId], references: [id])
+  storeId               String
+  store                 Store     @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  storeSnapshot         Json?
+  clientRequestId       String?
 
+  @@unique([storeId, clientRequestId])
   @@index([storeId, date])
 }
 
@@ -152,27 +174,28 @@ model CashRegisterSession {
   closingBalance         Float?
   calculatedCashInDrawer Float
   totalSales             Float
-  salesByPaymentMethod   Json      // { Dinheiro: number, Pix: number, Cartão: number }
+  salesByPaymentMethod   Json // { Dinheiro: number, Pix: number, Cartão: number }
   totalExpenses          Float
   totalWithdrawals       Float
   totalCreditPayments    Float
-  status                 String    // 'Aberto' | 'Fechado'
+  status                 String // 'Aberto' | 'Fechado'
   openedByUid            String
   openedByName           String
   closedByUid            String?
   closedByName           String?
-  correction             Json?     // { date: string, user: { uid: string, name: string }, oldValue: number, newValue: number }
-  openingCorrection      Json?     // { date: string, user: { uid: string, name: string }, oldValue: number, newValue: number }
-  storeId                String?
-  store                  Store?    @relation(fields: [storeId], references: [id])
+  correction             Json? // { date: string, user: { uid: string, name: string }, oldValue: number, newValue: number }
+  openingCorrection      Json? // { date: string, user: { uid: string, name: string }, oldValue: number, newValue: number }
+  storeId                String
+  store                  Store     @relation(fields: [storeId], references: [id], onDelete: Restrict)
 
+  @@unique([storeId, id])
   @@index([storeId, openingTime])
 }
 
 model CashTransaction {
   id               String   @id @default(uuid())
   sessionId        String
-  type             String   // 'Despesa' | 'Sangria' | 'Recebimento Fiado'
+  type             String // 'Despesa' | 'Sangria' | 'Recebimento Fiado'
   amount           Float
   description      String
   date             DateTime @default(now())
@@ -180,8 +203,9 @@ model CashTransaction {
   registeredByName String
   customerId       String?
   customerName     String?
-  storeId          String?
-  store            Store?   @relation(fields: [storeId], references: [id])
+  storeId          String
+  store            Store    @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  storeSnapshot    Json?
 
   @@index([storeId, sessionId, date])
 }
@@ -195,10 +219,10 @@ model StockAdjustmentLog {
   date           DateTime @default(now())
   oldQuantity    Float
   newQuantity    Float
-  reason         String   // 'Perda' | 'Avaria' | 'Contagem' | 'Doação' | 'Outro'
+  reason         String // 'Perda' | 'Avaria' | 'Contagem' | 'Doação' | 'Outro'
   notes          String?  @db.Text
-  storeId        String?
-  store          Store?   @relation(fields: [storeId], references: [id])
+  storeId        String
+  store          Store    @relation(fields: [storeId], references: [id], onDelete: Restrict)
 
   @@index([storeId, date])
 }
@@ -208,28 +232,28 @@ model StockEntryLog {
   date             DateTime @default(now())
   supplierId       String
   supplierName     String
-  items            Json     // Array<{ productId: string, productName: string, quantity: number, cost: number }>
+  items            Json // Array<{ productId: string, productName: string, quantity: number, cost: number }>
   totalCost        Float
   totalItems       Float
   registeredByUid  String
   registeredByName String
   purchaseOrderId  String?
-  storeId          String?
-  store            Store?   @relation(fields: [storeId], references: [id])
+  storeId          String
+  store            Store    @relation(fields: [storeId], references: [id], onDelete: Restrict)
 
   @@index([storeId, date])
 }
 
 model ProductChangeLog {
-  id             String   @id @default(uuid())
-  date           DateTime @default(now())
-  productId      String
-  productName    String
-  changedByUid   String
-  changedByName  String
-  changes        Json     // Array<{ field: string, oldValue: any, newValue: any }>
-  storeId        String?
-  store          Store?   @relation(fields: [storeId], references: [id])
+  id            String   @id @default(uuid())
+  date          DateTime @default(now())
+  productId     String
+  productName   String
+  changedByUid  String
+  changedByName String
+  changes       Json // Array<{ field: string, oldValue: any, newValue: any }>
+  storeId       String
+  store         Store    @relation(fields: [storeId], references: [id], onDelete: Restrict)
 
   @@index([storeId, date])
 }
@@ -238,18 +262,18 @@ model AccountsPayable {
   id               String    @id @default(uuid())
   description      String
   amount           Float
-  category         String?   // 'Aluguel' | 'Energia' | 'Água' | 'Internet' | 'Fornecedor' | 'Salários' | 'Impostos' | 'Outros'
+  category         String? // 'Aluguel' | 'Energia' | 'Água' | 'Internet' | 'Fornecedor' | 'Salários' | 'Impostos' | 'Outros'
   dateCreated      DateTime  @default(now())
   dueDate          DateTime
   paymentDate      DateTime?
-  status           String    // 'Pendente' | 'Pago' | 'Vencido'
+  status           String // 'Pendente' | 'Pago' | 'Vencido'
   supplierId       String?
   supplierName     String?
   registeredByUid  String
   registeredByName String
   cashSessionId    String?
-  storeId          String?
-  store            Store?    @relation(fields: [storeId], references: [id])
+  storeId          String
+  store            Store     @relation(fields: [storeId], references: [id], onDelete: Restrict)
 
   @@index([storeId, dueDate])
 }
@@ -261,27 +285,59 @@ model PurchaseOrder {
   dateCreated      DateTime  @default(now())
   dateExpected     DateTime
   dateReceived     DateTime?
-  status           String    // 'Pendente' | 'Recebido Parcialmente' | 'Recebido' | 'Cancelado'
-  items            Json      // Array<{ productId: string, productName: string, quantityOrdered: number, cost: number, quantityReceived: number }>
+  status           String // 'Pendente' | 'Recebido Parcialmente' | 'Recebido' | 'Cancelado'
+  items            Json // Array<{ productId: string, productName: string, quantityOrdered: number, cost: number, quantityReceived: number }>
   totalCost        Float
   registeredByUid  String
   registeredByName String
   notes            String?   @db.Text
-  storeId          String?
-  store            Store?    @relation(fields: [storeId], references: [id])
+  storeId          String
+  store            Store     @relation(fields: [storeId], references: [id], onDelete: Restrict)
 
+  @@unique([storeId, id])
   @@index([storeId, dateCreated])
 }
 
 model AuditLog {
-  id        String   @id @default(uuid())
-  date      DateTime @default(now())
-  action    String
-  details   String   @db.Text
-  userUid   String
-  userName  String
-  storeId   String?
-  store     Store?   @relation(fields: [storeId], references: [id])
+  id       String   @id @default(uuid())
+  date     DateTime @default(now())
+  action   String
+  details  String   @db.Text
+  userUid  String
+  userName String
+  storeId  String
+  store    Store    @relation(fields: [storeId], references: [id], onDelete: Restrict)
 
   @@index([storeId, date])
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  stores    Store[]
+}
+
+model StoreMembership {
+  userId    String
+  storeId   String
+  role      String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [uid], onDelete: Restrict)
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  @@id([userId, storeId])
+  @@index([storeId, role])
+}
+
+model PlatformAuditLog {
+  id            String   @id @default(uuid())
+  date          DateTime @default(now())
+  action        String
+  details       String   @db.Text
+  actorId       String
+  actorName     String
+  targetStoreId String?
+
+  @@index([date])
 }

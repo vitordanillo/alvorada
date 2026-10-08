@@ -33,7 +33,7 @@ import { PaymentReceiptDialog } from '@/components/customers/payment-receipt-dia
 
 
 export default function CustomersPage() {
-  const { customers, addCustomer, updateCustomer, deleteCustomer, addCreditPayment, loading, activeSession } = useAppContext();
+  const { customers, addCustomer, updateCustomer, deleteCustomer, addCreditPayment, loading, activeSession, user } = useAppContext();
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -143,7 +143,7 @@ export default function CustomersPage() {
   const handleSendWhatsApp = async (customer: Customer) => {
     try {
       const { sendWhatsAppBillingAction } = await import('@/lib/db-actions');
-      const result = await sendWhatsAppBillingAction(customer.id);
+      const result = await sendWhatsAppBillingAction(customer.id, user?.storeId);
       if (result.success && result.whatsappUrl) {
         toast({
           title: "Cobrança WhatsApp",

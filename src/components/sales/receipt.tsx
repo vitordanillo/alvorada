@@ -2,6 +2,7 @@
 
 'use client';
 
+import { useAppContext } from '@/context/app-context';
 import { Logo } from '@/components/icons/logo';
 import type { Sale } from '@/lib/types';
 import { format } from 'date-fns';
@@ -12,13 +13,16 @@ interface ReceiptProps {
 }
 
 export function Receipt({ sale }: ReceiptProps) {
+  const { user }=useAppContext();
+  const issuer=sale.storeSnapshot ?? user?.store;
   return (
     <div className="bg-background text-foreground p-4 font-mono text-sm">
       <div className="text-center mb-4">
         <Logo className="w-12 h-12 mx-auto mb-2 text-primary" />
-        <h2 className="text-lg font-bold">Alvorada Smart Market</h2>
-        <p className="text-xs">Avenida Principal, 123 - Centro</p>
-        <p className="text-xs">CNPJ: 12.345.678/0001-99</p>
+        <h2 className="text-lg font-bold">{issuer?.name ?? 'Loja'}</h2>
+        {issuer?.address && <p className="text-xs">{issuer.address}</p>}
+        {issuer?.cnpj && <p className="text-xs">CNPJ: {issuer.cnpj}</p>}
+        {issuer?.phone && <p className="text-xs">{issuer.phone}</p>}
       </div>
 
       <div className="text-xs mb-2">
@@ -72,6 +76,7 @@ export function Receipt({ sale }: ReceiptProps) {
       </div>
 
       <div className="text-center mt-4 text-xs">
+        <p className="text-xs">Alvorada · Firma Conecta</p>
         <p>Obrigado pela sua preferência!</p>
         <p className="font-bold">*** Este não é um documento fiscal ***</p>
       </div>

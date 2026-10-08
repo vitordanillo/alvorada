@@ -1,6 +1,7 @@
 
 'use client';
 
+import { StoreDetailsCard } from "@/components/settings/store-details-card";
 import { PageHeader } from "@/components/page-header";
 import { UserManagementTable } from "@/components/settings/user-management-table";
 import { SecuritySettingsCard } from "@/components/settings/security-settings-card";
@@ -39,6 +40,7 @@ export default function SettingsPage() {
         title="Configurações"
         description="Gerencie as configurações da sua loja e do sistema."
       />
+      <StoreDetailsCard />
       {loading.allUsers ? (
         <Card className="rounded-2xl border-none shadow-sm bg-card">
             <Skeleton className="h-[250px] w-full" />

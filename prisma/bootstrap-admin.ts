@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
-const prisma = new PrismaClient({ log: ['error'] });
+const prisma = new PrismaClient({ datasourceUrl:process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL, log: ['error'] });
 
 async function main() {
   const name = process.env.ALVORADA_ADMIN_NAME;
@@ -19,10 +19,11 @@ async function main() {
       throw new Error('An account already exists. Bootstrap will not modify existing users.');
     }
 
-    const store = await tx.store.create({ data: { name: process.env.ALVORADA_STORE_NAME?.trim() || 'Loja Principal' } });
-    await tx.user.create({
+    const store = await tx.store.create({ data: { name: process.env.ALVORADA_STORE_NAME?.trim() || 'Loja Principal',organization:{create:{name:process.env.ALVORADA_STORE_NAME?.trim() || 'Loja Principal'}} } });
+    const user=await tx.user.create({
       data: {
         uid: randomUUID(),
+        isPlatformAdmin:true,
         name: name.trim(),
         email,
         passwordHash,
@@ -30,6 +31,7 @@ async function main() {
         storeId: store.id,
       },
     });
+    await tx.storeMembership.create({data:{userId:user.uid,storeId:store.id,role:'Administrador'}});
   });
 
   console.log(`Initial administrator created for ${email}. No demo records were added.`);

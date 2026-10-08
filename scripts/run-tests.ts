@@ -11,15 +11,23 @@ async function main() {
     throw new Error('TEST_DATABASE_URL must identify a separate disposable schema ending in _test.');
   }
   process.env.DATABASE_URL = testUrl.toString();
-  const { prisma } = await import('../src/lib/db');
-  const { processSale } = await import('../src/lib/sales-service');
+  const { PrismaClient }=await import('@prisma/client');
+  const fixtureUrl=new URL(process.env.TEST_DIRECT_DATABASE_URL || process.env.DIRECT_DATABASE_URL || testUrl.toString());
+  fixtureUrl.searchParams.set('schema',testUrl.searchParams.get('schema')!);
+  if(fixtureUrl.hostname!==testUrl.hostname || fixtureUrl.pathname!==testUrl.pathname) throw new Error('Fixtures must target the disposable database.');
+  const prisma=new PrismaClient({datasourceUrl:fixtureUrl.toString(),log:[]});
+  const { withDbContext }=await import('../src/lib/db');
+  const { processSale: actualProcessSale } = await import('../src/lib/sales-service');
+  const processSale=(sale:Omit<Sale,'id'|'date'|'status'>,sessionId:string,user:User)=>withDbContext({uid:user.uid,storeId:user.storeId,user},()=>actualProcessSale(sale,sessionId,user));
   const storeIds: string[] = [];
+  const organizationIds:string[]=[];
   let passed = 0;
   const check = (name: string, verify: () => void) => { verify(); passed++; console.log(`PASS ${name}`); };
   try {
-    const store = await prisma.store.create({ data: { name: `TEST-${randomUUID()}` } });
-    const other = await prisma.store.create({ data: { name: `TEST-${randomUUID()}` } });
+    const store = await prisma.store.create({ data: { name: `TEST-${randomUUID()}`,organization:{create:{name:'Test organization'}} } });
+    const other = await prisma.store.create({ data: { name: `TEST-${randomUUID()}`, organization:{create:{name:'Test organization'}} } });
     storeIds.push(store.id, other.id);
+    organizationIds.push(store.organizationId,other.organizationId);
     const user: User = { uid: randomUUID(), name: 'Test operator', email: `${randomUUID()}@test.invalid`, role: 'Administrador', storeId: store.id };
     const product = await prisma.product.create({ data: {
       name: 'Temporary test product', sku: randomUUID(), status: 'Ativo', category: 'Alimentos',
@@ -70,6 +78,7 @@ async function main() {
       await prisma.$transaction([
         prisma.sale.deleteMany({ where }), prisma.cashRegisterSession.deleteMany({ where }),
         prisma.product.deleteMany({ where }), prisma.customer.deleteMany({ where }), prisma.store.deleteMany({ where: { id: { in: storeIds } } }),
+        prisma.organization.deleteMany({where:{id:{in:organizationIds}}}),
       ]);
     } finally { await prisma.$disconnect(); }
   }
