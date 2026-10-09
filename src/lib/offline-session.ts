@@ -12,3 +12,4 @@ export async function serverReachable():Promise<boolean>{
  if(!navigator.onLine)return false;
  try{const response=await fetch('/api/health',{cache:'no-store',signal:AbortSignal.timeout(4000)});return response.ok;}catch{return false;}
 }
+export function locallySignedOut():boolean{try{return localStorage.getItem('alvorada-offline-signed-out')==='1';}catch{return false;}}

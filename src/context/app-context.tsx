@@ -12,7 +12,7 @@ import {submitOfflineOperationAction} from '@/lib/offline-operation-actions';
 import {validateOfflineOperation} from '@/lib/offline-validation';
 import {projectService} from '@/lib/offline-service-projection';
 import {projectOperations, type OfflineSnapshot} from '@/lib/offline-projection';
-import {rememberOfflineUser,readOfflineUser,forgetOfflineUser,serverReachable} from '@/lib/offline-session';
+import {rememberOfflineUser,readOfflineUser,forgetOfflineUser,serverReachable,locallySignedOut} from '@/lib/offline-session';
 import {OfflineRuntime} from '@/components/layout/offline-runtime';
 import { OfflineSyncPanel } from '@/components/layout/offline-sync-panel';
 import type { Product, Customer, Sale, Supplier, User, CashRegisterSession, CashTransaction, StockAdjustmentLog, SystemSettings, StockEntryLog, ProductChangeLog, AccountsPayable, PurchaseOrder } from '@/lib/types';
@@ -320,7 +320,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // On mount: Check auth session and sync offline sales
   useEffect(() => {
-    if(localStorage.getItem('alvorada-offline-signed-out')==='1'){if(navigator.onLine)void logoutUserAction().catch(()=>{});setLoadingAuth(false);return;}
+    if(locallySignedOut()){if(navigator.onLine)void logoutUserAction().catch(()=>{});setLoadingAuth(false);return;}
     getCurrentUserAction()
       .then((currentUser) => {
         rememberOfflineUser(currentUser);setUser(currentUser);
@@ -573,7 +573,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const reloadUser = async () => { if(!await serverReachable())return;const current=await getCurrentUserAction();rememberOfflineUser(current);setUser(current); };
 
   const logout = async () => {
-    forgetOfflineUser();if(navigator.onLine)await logoutUserAction();
+    forgetOfflineUser();if(navigator.onLine){try{await logoutUserAction();}catch{/* Sign-out remains recorded locally until the server can revoke the cookie. */}}
     setUser(null);setOfflineOperations([]);baseRef.current={};
   };
 
