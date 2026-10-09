@@ -12,11 +12,13 @@ const pm2=require(path.join(deploymentRoot,'runtime','pm2'));
 const rpc=(method,args)=>new Promise((resolve,reject)=>pm2.Client.executeRemote(method,args,(error,result)=>error?reject(error):resolve(result)));
 const targets=[{name:'alvorada-smart-market',file:'start-server.cjs'},{name:'alvorada-billing',file:'billing-worker.cjs'}];
 async function healthy(){
-  for(let i=0;i<10;i++){
-    try{const r=await fetch('http://127.0.0.1:3070/api/health',{signal:AbortSignal.timeout(5000)});const j=await r.json();if(r.ok&&j.status==='ok'&&j.database==='connected')return;}catch{}
-    await new Promise(resolve=>setTimeout(resolve,1000));
+  let detail='not reached';
+  for(let i=0;i<30;i++){
+    try{const r=await fetch('http://127.0.0.1:3070/api/health',{signal:AbortSignal.timeout(10000)});const j=await r.json();detail=`HTTP ${r.status}; status=${j.status}; database=${j.database}`;if(r.ok&&j.status==='ok'&&j.database==='connected')return;}catch(error){detail=error.cause?.code||error.name;}
+    if(i===0||i%5===0)console.log('Waiting for release health: '+detail);
+    await new Promise(resolve=>setTimeout(resolve,2000));
   }
-  throw new Error('Release health check failed');
+  throw new Error('Release health check failed: '+detail);
 }
 async function main(){
   await new Promise((resolve,reject)=>pm2.connect(error=>error?reject(error):resolve()));
