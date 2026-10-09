@@ -26,7 +26,7 @@ function log(message) {
 }
 async function openApp() {
   try {await win.loadURL(ORIGIN+'/pos');}
-  catch {if(!win.isDestroyed())await win.loadFile(recovery);}
+  catch(error) {log(`navigation: ${error.code || 'error'} ${error.message}`);if(!win.isDestroyed())await win.loadFile(recovery);}
 }
 function menu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
