@@ -1,0 +1,65 @@
+{
+  "name": "alvorada-desktop",
+  "version": "1.0.0",
+  "description": "Alvorada — Firma Conecta",
+  "author": "Firma Conecta",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "prepare:assets": "node prepare-assets.cjs",
+    "dist": "electron-builder --win nsis --x64 --publish never",
+    "pack": "electron-builder --win --dir --x64 --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9",
+    "js-yaml": "4.3.2"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.firmaconecta.alvorada",
+    "productName": "Alvorada",
+    "artifactName": "Alvorada-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "*.cjs",
+      "recovery.html",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "guid": "c746d24a-c962-4f47-8202-f1521c24d047",
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "Alvorada",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://alvorada.firmaconecta.com/desktop-updates/",
+        "channel": "latest"
+      }
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+name: Publish Alvorada desktop release
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['desktop/**', 'src/**', 'public/**', '.github/workflows/desktop-release.yml']
+permissions:
+  contents: write
+concurrency:
+  group: alvorada-desktop-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Create the next immutable desktop release
+        shell: bash
+        run: |
+          node deploy/tag-desktop-release.cjs
+          git config user.name 'Firma Conecta release'
+          git config user.email 'releases@firmaconecta.com'
+          git add desktop/package.json desktop/package-lock.json
+          git commit -m 'Prepare automatic Alvorada desktop release'
+          VERSION=$(node -p "require('./desktop/package.json').version")
+          git tag "desktop-v$VERSION"
+          git push origin "desktop-v$VERSION"

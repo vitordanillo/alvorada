@@ -1,4 +1,5 @@
-// Utility to manage IndexedDB for Offline-First POS
+import {desktopStorage} from './desktop-storage';
+// SQLite in the desktop application; IndexedDB in the browser.
 const databaseName = (scope: string) => { if(!scope || !/^[a-zA-Z0-9:-]+$/.test(scope)) throw new Error('Loja e usuário são obrigatórios para o cache.'); return `AlvoradaOfflineV2:${scope}`; };
 const DB_VERSION = 2;
 function safeCache(key:string,value:any){
@@ -90,6 +91,7 @@ export function initOfflineDb(scope: string): Promise<IDBDatabase> {
 }
 
 export async function saveToCache(scope: string, key: string, data: any): Promise<void> {
+  const desktop=await desktopStorage(scope);if(desktop){await desktop.storage('put',scope,'cachedData',key,data);return;}
   try {
     const db = await initOfflineDb(scope);
     return new Promise((resolve, reject) => {
@@ -107,6 +109,7 @@ export async function saveToCache(scope: string, key: string, data: any): Promis
 }
 
 export async function getFromCache<T>(scope: string, key: string): Promise<T | null> {
+  const desktop=await desktopStorage(scope);if(desktop)return safeCache(key,await desktop.storage('get',scope,'cachedData',key)) as T;
   try {
     const db = await initOfflineDb(scope);
     return new Promise((resolve, reject) => {
@@ -125,6 +128,7 @@ export async function getFromCache<T>(scope: string, key: string): Promise<T | n
 }
 
 export async function queueOfflineSale(scope: string, sale: OfflineSale): Promise<void> {
+  const desktop=await desktopStorage(scope);if(desktop){await desktop.storage('put',scope,'salesQueue',sale.id,sale);return;}
   try {
     const db = await initOfflineDb(scope);
     return new Promise((resolve, reject) => {
@@ -143,6 +147,7 @@ export async function queueOfflineSale(scope: string, sale: OfflineSale): Promis
 }
 
 export async function getQueuedSales(scope: string): Promise<OfflineSale[]> {
+  const desktop=await desktopStorage(scope);if(desktop)return desktop.storage('all',scope,'salesQueue');
   try {
     const db = await initOfflineDb(scope);
     return new Promise((resolve, reject) => {
@@ -161,6 +166,7 @@ export async function getQueuedSales(scope: string): Promise<OfflineSale[]> {
 }
 
 export async function removeQueuedSale(scope: string, id: string): Promise<void> {
+  const desktop=await desktopStorage(scope);if(desktop){await desktop.storage('remove',scope,'salesQueue',id);return;}
   try {
     const db = await initOfflineDb(scope);
     return new Promise((resolve, reject) => {
@@ -184,8 +190,9 @@ async function operationTransaction<T>(scope:string,mode:IDBTransactionMode,work
  return new Promise((resolve,reject)=>{const tx=db.transaction('operations',mode);let result:T;const request=work(tx.objectStore('operations'));request.onsuccess=()=>{result=request.result;};tx.oncomplete=()=>{db.close();resolve(result);};tx.onabort=tx.onerror=()=>{db.close();reject(tx.error??new Error('Não foi possível salvar a operação no dispositivo.'));};});
 }
 export async function queueOperation(scope:string,item:OfflineOperation):Promise<void>{
+ const desktop=await desktopStorage(scope);if(desktop){await desktop.storage('put',scope,'operations',item.id,item);return;}
  const db=await initOfflineDb(scope);
  await new Promise<void>((resolve,reject)=>{const tx=db.transaction('operations','readwrite');const store=tx.objectStore('operations');const read=store.getAll();read.onsuccess=()=>{const rows=read.result as OfflineOperation[];const prior=rows.find(r=>r.id===item.id);const sequence=prior?.sequence??Math.max(Date.now()*1000,...rows.map(r=>r.sequence??0))+1;store.put({...item,sequence});};tx.oncomplete=()=>{db.close();resolve();};tx.onabort=tx.onerror=()=>{db.close();reject(tx.error??new Error('Falha no armazenamento local.'));};});
 }
-export async function getOperations(scope:string):Promise<OfflineOperation[]>{const items=await operationTransaction<OfflineOperation[]>(scope,'readonly',store=>store.getAll());return items.sort((a,b)=>(a.sequence??Date.parse(a.createdAt))-(b.sequence??Date.parse(b.createdAt))||a.id.localeCompare(b.id));}
-export async function removeOperation(scope:string,id:string):Promise<void>{await operationTransaction(scope,'readwrite',store=>store.delete(id));}
+export async function getOperations(scope:string):Promise<OfflineOperation[]>{const desktop=await desktopStorage(scope);const items:OfflineOperation[]=desktop?await desktop.storage('all',scope,'operations'):await operationTransaction<OfflineOperation[]>(scope,'readonly',store=>store.getAll());return items.sort((a,b)=>(a.sequence??Date.parse(a.createdAt))-(b.sequence??Date.parse(b.createdAt))||a.id.localeCompare(b.id));}
+export async function removeOperation(scope:string,id:string):Promise<void>{const desktop=await desktopStorage(scope);if(desktop){await desktop.storage('remove',scope,'operations',id);return;}await operationTransaction(scope,'readwrite',store=>store.delete(id));}

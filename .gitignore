@@ -50,3 +50,6 @@ next-env.d.ts
 /.next-improvements/
 /.next-print/
 /.next-*/
+/desktop/node_modules/
+/desktop/dist/
+/desktop/assets/shell/

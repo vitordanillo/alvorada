@@ -8,7 +8,7 @@ import type { OfflineSale } from '@/lib/offline-db';
 import type {OfflineOperation} from '@/lib/offline-operation-types';
 import {operationLabels} from '@/lib/offline-operation-types';
 import {getServiceDataAction} from '@/lib/service-actions';
-import {submitOfflineOperationAction} from '@/lib/offline-operation-actions';
+import {submitOfflineOperationAction} from '@/lib/offline-transport';
 import {validateOfflineOperation} from '@/lib/offline-validation';
 import {projectService} from '@/lib/offline-service-projection';
 import {projectOperations, type OfflineSnapshot} from '@/lib/offline-projection';

@@ -1,0 +1,15 @@
+const fs=require('node:fs');
+const path=require('node:path');
+const cp=require('node:child_process');
+const root=path.resolve(__dirname,'..');
+const pkgFile=path.join(root,'desktop/package.json');
+const lockFile=path.join(root,'desktop/package-lock.json');
+const pkg=JSON.parse(fs.readFileSync(pkgFile,'utf8'));
+const tags=cp.execFileSync('git',['tag','--list','desktop-v*'],{cwd:root,encoding:'utf8'}).trim().split('\n').filter(tag=>/^desktop-v\d+\.\d+\.\d+$/.test(tag)).map(tag=>tag.slice(9));
+const compare=(a,b)=>{const x=a.split('.').map(Number),y=b.split('.').map(Number);for(let i=0;i<3;i++)if(x[i]!==y[i])return x[i]-y[i];return 0;};
+const latest=[pkg.version,...tags].sort(compare).at(-1);
+const [major,minor,patch]=latest.split('.').map(Number);
+pkg.version=`${major}.${minor}.${patch+1}`;
+const lock=JSON.parse(fs.readFileSync(lockFile,'utf8'));lock.version=pkg.version;lock.packages[''].version=pkg.version;
+fs.writeFileSync(pkgFile,JSON.stringify(pkg,null,2)+'\n');fs.writeFileSync(lockFile,JSON.stringify(lock,null,2)+'\n');
+console.log('Release preparada: '+pkg.version);
