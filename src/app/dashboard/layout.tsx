@@ -59,7 +59,7 @@ export default function DashboardLayout({
                 <UserNav />
             </div>
         </header>
-        <main className="flex-1 p-6">{dataError && <p role="alert" className="mb-4 rounded-md border border-destructive p-3 text-destructive">{dataError} <button className="ml-3 underline" onClick={()=>void retryData()}>Tentar novamente</button></p>}<DataNavigation />{children}</main>
+        <main className="flex-1 p-6">{dataError && <p role="alert" className="mb-4 rounded-md border border-destructive p-3 text-destructive">{dataError} <button className="ml-3 underline" onClick={()=>void retryData()}>Tentar novamente</button></p>}{children}<DataNavigation /></main>
       </SidebarInset>
     </SidebarProvider>
   );

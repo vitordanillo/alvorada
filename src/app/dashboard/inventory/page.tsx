@@ -1,5 +1,4 @@
 
-import {BusinessReport} from '@/components/reports/business-report';
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Lightbulb, PackagePlus, SlidersHorizontal, ClipboardPlus } from "lucide-react";
@@ -12,7 +11,6 @@ export default function InventoryPage() {
         title="Gestão de Estoque"
         description="Acesse as ferramentas para controle de reposição e entrada de mercadorias."
       />
-      <BusinessReport view="inventory"/>
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Link href="/dashboard/inventory/restock" className="focus:outline-none focus:ring-2 focus:ring-primary rounded-2xl">
           <Card className="hover:border-primary transition-colors h-full">
