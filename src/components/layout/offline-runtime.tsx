@@ -33,5 +33,5 @@ export function OfflineRuntime(){
   return()=>{cancelled=true;document.removeEventListener('click',navigate,true);window.removeEventListener('online',prepare);};
  },[user?.uid,user?.storeId,user?.role]);
  if(!user?.storeId)return null;
- return <div role="status" className={`border-b px-6 py-2 text-sm ${isOffline?'bg-amber-50 text-amber-900':'bg-background text-muted-foreground'}`}>{isOffline?'Sem conexão · Operações salvas neste dispositivo aguardam sincronização.':offlineOperations.length?${offlineOperations.length} operações locais aguardam confirmação.:ready?'Dispositivo preparado para operar offline.':problem||'Preparando este dispositivo para operar offline…'}</div>;
+ return <div role="status" className={`border-b px-6 py-2 text-sm ${isOffline?'bg-amber-50 text-amber-900':'bg-background text-muted-foreground'}`}>{isOffline?'Sem conexão · Operações salvas neste dispositivo aguardam sincronização.':offlineOperations.length?offlineOperations.length+' operações locais aguardam confirmação.':ready?'Dispositivo preparado para operar offline.':problem||'Preparando este dispositivo para operar offline…'}</div>;
 }
