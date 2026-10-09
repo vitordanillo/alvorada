@@ -8,6 +8,7 @@ export type Store = {
   phone: string;
   status: 'Ativa' | 'Suspensa';
   organizationId: string;
+  enabledModules?: string[];
 };
 
 export type StoreMembership = Store & { role: User['role'] };
@@ -56,6 +57,7 @@ export type Sale = {
   paymentMethods: Array<{
     method: 'Dinheiro' | 'Pix' | 'Cartão' | 'Fiado' | 'Pontos';
     amount: number;
+    cardType?: 'Crédito' | 'Débito';
   }>;
   cashRegisterSessionId?: string;
   status: 'Concluída' | 'Cancelada' | 'Pendente';

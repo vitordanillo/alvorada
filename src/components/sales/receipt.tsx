@@ -66,7 +66,7 @@ export function Receipt({ sale }: ReceiptProps) {
        <div className="space-y-1 text-xs">
           {sale.paymentMethods.map((p, i) => (
             <div key={i} className="flex justify-between">
-              <span>Pagamento ({p.method}):</span>
+              <span>Pagamento ({p.cardType ? `Cartão ${p.cardType}` : p.method}):</span>
               <span>R$ {p.amount.toFixed(2).replace('.', ',')}</span>
             </div>
           ))}

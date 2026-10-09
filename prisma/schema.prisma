@@ -168,6 +168,7 @@ model Sale {
   clientRequestId       String?
 
   @@unique([storeId, clientRequestId])
+  @@unique([storeId, id])
   @@index([storeId, date])
   @@index([storeId, cashRegisterSessionId])
   @@index([storeId, customerId])
@@ -332,6 +333,83 @@ model Organization {
   name      String
   createdAt DateTime @default(now())
   stores    Store[]
+  modules   OrganizationModule[]
+}
+
+model OrganizationModule {
+  organizationId String
+  moduleKey String
+  enabled Boolean @default(false)
+  updatedAt DateTime @updatedAt
+  updatedBy String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  @@id([organizationId, moduleKey])
+}
+
+model ServiceTable {
+  id String @id @default(uuid())
+  storeId String
+  name String
+  active Boolean @default(true)
+  tabs ServiceTab[]
+  @@unique([storeId, id])
+  @@unique([storeId, name])
+}
+
+model ServiceTab {
+  id String @id @default(uuid())
+  storeId String
+  tableId String
+  table ServiceTable @relation(fields: [storeId, tableId], references: [storeId, id], onDelete: Restrict)
+  customerName String @default("")
+  status String @default("Aberta")
+  openedAt DateTime @default(now())
+  closedAt DateTime?
+  openedBy String
+  saleId String? @unique
+  items ServiceTabItem[]
+  @@unique([storeId, id])
+  @@index([storeId, status, openedAt])
+  @@index([storeId, tableId])
+}
+
+model ServiceTabItem {
+  id String @id @default(uuid())
+  storeId String
+  tabId String
+  tab ServiceTab @relation(fields: [storeId, tabId], references: [storeId, id], onDelete: Restrict)
+  productId String
+  productName String
+  quantity Float
+  price Float
+  costAtTimeOfUse Float @default(0)
+  unit String
+  requestId String
+  addedAt DateTime @default(now())
+  addedBy String
+  cancelledAt DateTime?
+  cancelledBy String?
+  cancellationReason String?
+  @@unique([storeId, requestId])
+  @@index([storeId, tabId])
+  @@index([storeId, productId])
+}
+
+model PickupTicket {
+  id String @id @default(uuid())
+  storeId String
+  saleId String
+  itemIndex Int
+  unitIndex Int
+  code String @unique
+  productName String
+  status String @default("Pendente")
+  issuedAt DateTime @default(now())
+  issuedBy String
+  redeemedAt DateTime?
+  redeemedBy String?
+  @@unique([storeId, saleId, itemIndex, unitIndex])
+  @@index([storeId, status, issuedAt])
 }
 
 model StoreMembership {

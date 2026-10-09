@@ -31,9 +31,11 @@ type NavLink = {
   label: string;
   icon: LucideIcon;
   roles: User['role'][];
+  module?: string;
 };
 
 const allLinks: NavLink[] = [
+  {href:'/dashboard/service',label:'Mesas e fichas',icon:ClipboardList,roles:['Administrador','Gerente','Operador de Caixa'],module:'mesas_fichas'},
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Administrador', 'Gerente', 'Operador de Caixa', 'Estoquista'] },
   { href: '/pos', label: 'PDV', icon: ShoppingCart, roles: ['Administrador', 'Gerente', 'Operador de Caixa'] },
   { href: '/dashboard/cash-register', label: 'Caixa', icon: Banknote, roles: ['Administrador', 'Gerente', 'Operador de Caixa'] },
@@ -58,7 +60,7 @@ export function SidebarNav() {
     setIsClient(true);
   }, []);
 
-  const visibleLinks = allLinks.filter(link => user?.storeId && link.roles.includes(user.role));
+  const visibleLinks = allLinks.filter(link => user?.storeId && link.roles.includes(user.role) && (!link.module || user.store?.enabledModules?.includes(link.module)));
 
   const renderSkeletons = () => (
     <SidebarMenu className="flex-1">

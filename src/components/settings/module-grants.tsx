@@ -1,0 +1,18 @@
+'use client';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { getModuleGrantsAction, setModuleGrantAction } from '@/lib/module-admin-actions';
+import { MODULES } from '@/lib/module-catalog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+
+export function ModuleGrants({query}:{query:string}) {
+  const [rows,setRows]=useState<Awaited<ReturnType<typeof getModuleGrantsAction>>>([]);
+  const [loading,setLoading]=useState(true),[pending,setPending]=useState(false),[error,setError]=useState('');
+  const [selected,setSelected]=useState<{organizationId:string;name:string;moduleKey:string;enabled:boolean}|null>(null);
+  const [reason,setReason]=useState('');const seq=useRef(0);
+  const load=useCallback(async()=>{const request=++seq.current;setLoading(true);try{const r=await getModuleGrantsAction(query);if(request===seq.current){setRows(r);setError('');}}catch(e){if(request===seq.current)setError(e instanceof Error?e.message:'Falha ao carregar módulos.');}finally{if(request===seq.current)setLoading(false);}},[query]);
+  useEffect(()=>{void load();return()=>{seq.current++;};},[load]);
+  const save=async(e:React.FormEvent)=>{e.preventDefault();if(!selected)return;setPending(true);try{await setModuleGrantAction({...selected,reason});setSelected(null);setReason('');await load();}catch(c){setError(c instanceof Error?c.message:'Não foi possível salvar.');}finally{setPending(false);}};
+  return <div className="space-y-4"><p className="rounded-lg border bg-blue-50 p-4 text-sm">A liberação vale para todas as lojas da empresa. Empresas novas começam com os módulos opcionais bloqueados. Bloquear preserva os dados e exige que as mesas estejam fechadas.</p>{error&&<p role="alert" className="text-destructive">{error}</p>}{loading?<p role="status">Carregando empresas…</p>:!rows.length?<p>Nenhuma empresa encontrada.</p>:rows.map(row=><section key={row.id} className="rounded-xl border bg-white p-5"><h2 className="font-semibold">{row.name}</h2><p className="mt-1 text-sm text-muted-foreground">{row.stores.map(s=>s.name).join(' · ')||'Sem lojas cadastradas'}</p>{MODULES.map(module=>{const enabled=row.modules.some(m=>m.moduleKey===module.key&&m.enabled);return <div key={module.key} className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4"><div><h3 className="font-medium">{module.name}</h3><p className="text-sm text-muted-foreground">{module.description}</p><p className="mt-1 text-sm">{enabled?'Liberado':'Bloqueado'}</p></div><Button variant={enabled?'outline':'default'} disabled={pending} onClick={()=>{setError('');setReason('');setSelected({organizationId:row.id,name:row.name,moduleKey:module.key,enabled:!enabled});}}>{enabled?'Bloquear módulo':'Liberar módulo'}</Button></div>;})}</section>)}<Dialog open={!!selected} onOpenChange={v=>{if(!v&&!pending)setSelected(null);}}><DialogContent><DialogHeader><DialogTitle>{selected?.enabled?'Liberar módulo':'Bloquear módulo'}</DialogTitle><DialogDescription>{selected?.name} · A mudança será registrada na auditoria.</DialogDescription></DialogHeader><form onSubmit={save} className="space-y-4"><label className="block text-sm">Motivo<Input required minLength={5} maxLength={500} value={reason} onChange={e=>setReason(e.target.value)} disabled={pending}/></label>{error&&<p role="alert" className="text-destructive">{error}</p>}<Button disabled={pending} type="submit">{pending?'Salvando…':'Confirmar'}</Button></form></DialogContent></Dialog></div>;
+}

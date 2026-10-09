@@ -839,11 +839,11 @@ export async function cancelSaleAction(
       for (const payment of pMethods) {
         if (payment.method === 'Dinheiro') {
           sessionUpdate.calculatedCashInDrawer = { decrement: payment.amount };
-          decPaymentMethods['Dinheiro'] = payment.amount;
+          decPaymentMethods['Dinheiro'] = (decPaymentMethods['Dinheiro']||0)+payment.amount;
         } else if (payment.method === 'Cartão') {
-          decPaymentMethods['Cartão'] = payment.amount;
+          decPaymentMethods['Cartão'] = (decPaymentMethods['Cartão']||0)+payment.amount;
         } else if (payment.method === 'Pix') {
-          decPaymentMethods['Pix'] = payment.amount;
+          decPaymentMethods['Pix'] = (decPaymentMethods['Pix']||0)+payment.amount;
         } else if (payment.method === 'Fiado' && sale.customerId !== 'default') {
           fiadoAmount = payment.amount;
         } else if (payment.method === 'Pontos' && sale.customerId !== 'default') {

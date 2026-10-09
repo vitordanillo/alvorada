@@ -54,6 +54,10 @@ export async function resolveUser(uid: string, requestedStoreId?: string): Promi
       const store=await withDbContext({platformAdmin:true},()=>prisma.store.findUnique({where:{id:requestedStoreId}}));
       if (store?.status==='Ativa') selected={...mapStore(store),role:'Administrador'};
     }
+    if(selected) {
+      selected.enabledModules=await withDbContext({storeId:selected.id},async()=>
+        (await prisma.organizationModule.findMany({where:{organizationId:selected!.organizationId,enabled:true},select:{moduleKey:true}})).map(m=>m.moduleKey));
+    }
     return {uid:record.uid,name:record.name,email:record.email,avatarUrl:record.avatarUrl ?? undefined,
       role:selected?.role ?? 'Administrador',storeId:selected?.id,store:selected,isPlatformAdmin:record.isPlatformAdmin,mustChangePassword:record.mustChangePassword,stores};
   });

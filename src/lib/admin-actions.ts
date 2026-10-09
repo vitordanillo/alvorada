@@ -19,7 +19,7 @@ const serialize=<T>(value:T):T=>JSON.parse(JSON.stringify(value));
 export async function getAdminDataAction(section='overview',query='',page=1, filters:{status?:string;storeId?:string;from?:string;to?:string}={}) {
   return withAuthenticatedAction(async()=>{
     const q=z.string().max(150).parse(query).trim(), skip=(z.number().int().min(1).max(100000).parse(page)-1)*20;
-    z.enum(['overview','stores','users','plans','subscriptions','invoices','audit']).parse(section);
+    z.enum(['overview','stores','users','plans','subscriptions','invoices','audit','modules']).parse(section);
     const today=commercialToday();
     const month=new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),1));
     const [storeCount,activeStores,userCount,activeSubscriptions,recurring,received,pending,overdue,stores,plans,organizations]=await Promise.all([
