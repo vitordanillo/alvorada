@@ -37,6 +37,22 @@ try {
   & 'C:\Program Files\nodejs\node.exe' publish.cjs $updateRoot
   if($LASTEXITCODE -ne 0){throw 'Falha ao publicar a atualização.'}
   Add-Content -LiteralPath $log -Value "$(Get-Date -Format o) PUBLISHED $tag"
+  # Generated release directories only; customer data and web releases are elsewhere.
+  Set-Location -LiteralPath $repository
+  $generated=@(Get-ChildItem -LiteralPath $buildRoot -Directory | Where-Object {$_.Name -match '^desktop-v\d+\.\d+\.\d+$'} | Sort-Object {[version]$_.Name.Substring(9)} -Descending)
+  foreach($old in @($generated | Select-Object -Skip 3)){
+    $resolved=[IO.Path]::GetFullPath($old.FullName)
+    if(!$resolved.StartsWith([IO.Path]::GetFullPath($buildRoot)+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or $resolved -eq $candidate){throw 'Caminho de limpeza inválido.'}
+    Remove-Item -LiteralPath $resolved -Recurse -Force
+  }
+  & git -c "safe.directory=$repository" worktree prune
+  $installers=@(Get-ChildItem -LiteralPath $updateRoot -File | Where-Object {$_.Name -match '^Alvorada-(\d+\.\d+\.\d+)-x64\.exe$'} | Sort-Object {[version]([regex]::Match($_.Name,'\d+\.\d+\.\d+').Value)} -Descending)
+  foreach($old in @($installers | Select-Object -Skip 5)){
+    $resolved=[IO.Path]::GetFullPath($old.FullName)
+    if(!$resolved.StartsWith([IO.Path]::GetFullPath($updateRoot)+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Caminho de instalador inválido.'}
+    Remove-Item -LiteralPath $resolved -Force
+    if(Test-Path -LiteralPath ($resolved+'.blockmap')){Remove-Item -LiteralPath ($resolved+'.blockmap') -Force}
+  }
 } catch {
   Add-Content -LiteralPath $log -Value "$(Get-Date -Format o) FAILED $($_.Exception.Message)"
   throw

@@ -28,6 +28,8 @@ Backups ficam na subpasta `backups`, com retenção de dez cópias. A desinstala
 - A tarefa Windows `Alvorada-Desktop-Releases` consulta tags `desktop-vMAJOR.MINOR.PATCH` a cada 30 minutos. A maior release nova é construída em worktree próprio, com dependências fixadas pelo lockfile; só depois de um build bem sucedido é publicado o manifesto. Falhas preservam a versão publicada e ficam em `backups\desktop-release-worker.log`.
 - `.github/workflows/desktop-release.yml` cria automaticamente uma tag com a próxima versão em publicações da branch `main` que alterem interface/desktop. `workflow_dispatch` também permite uma release. Branches de desenvolvimento não são publicadas automaticamente; para uma release aprovada fora da main, atualizar package/lock e publicar a tag correspondente.
 - A tarefa deve manter a origem Git, o executável Node, o Git e o acesso à rede. O arquivo `latest.json` mostra a versão publicada. Builds e atualizações não substituem o processo de homologação.
+- A VPS mantém três diretórios de build e cinco instaladores de releases, evitando crescimento indefinido. Dados de clientes ficam nos computadores e no banco central, fora desses diretórios.
+- Em uma troca futura de domínio, manter o canal antigo disponível até que os clientes recebam a versão com os novos endereços.
 
 ### Assinatura do Windows
 
