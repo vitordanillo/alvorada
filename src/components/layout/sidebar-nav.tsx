@@ -35,11 +35,11 @@ type NavLink = {
 };
 
 const allLinks: NavLink[] = [
-  {href:'/dashboard/service',label:'Mesas e fichas',icon:ClipboardList,roles:['Administrador','Gerente','Operador de Caixa'],module:'mesas_fichas'},
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Administrador', 'Gerente', 'Operador de Caixa', 'Estoquista'] },
   { href: '/pos', label: 'PDV', icon: ShoppingCart, roles: ['Administrador', 'Gerente', 'Operador de Caixa'] },
+  {href:'/dashboard/service',label:'Mesas e fichas',icon:ClipboardList,roles:['Administrador','Gerente','Operador de Caixa'],module:'mesas_fichas'},
   { href: '/dashboard/cash-register', label: 'Caixa', icon: Banknote, roles: ['Administrador', 'Gerente', 'Operador de Caixa'] },
   { href: '/dashboard/products', label: 'Produtos', icon: Package, roles: ['Administrador', 'Gerente', 'Estoquista'] },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Administrador', 'Gerente', 'Operador de Caixa', 'Estoquista'] },
   { href: '/dashboard/inventory', label: 'Estoque', icon: Warehouse, roles: ['Administrador', 'Gerente', 'Estoquista'] },
   { href: '/dashboard/sales', label: 'Vendas', icon: CircleDollarSign, roles: ['Administrador', 'Gerente'] },
   { href: '/dashboard/reports', label: 'Relatórios', icon: AreaChart, roles: ['Administrador', 'Gerente'] },
