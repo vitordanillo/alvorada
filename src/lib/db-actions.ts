@@ -340,9 +340,9 @@ export async function getInitialDataAction(expectedStoreId?: string) {
 
     if (role === 'Administrador') {
       allUsers = results[4].map((u: any) => ({
-        uid: u.uid,
-        name: u.name,
-        email: u.email,
+        uid: u.user.uid,
+        name: u.user.name,
+        email: u.user.email,
         role: u.role as any,
         avatarUrl: u.user.avatarUrl || undefined,
       }));

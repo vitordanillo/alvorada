@@ -41,3 +41,4 @@ next-env.d.ts
 .git_portable/
 
 /.next-final/
+/.next-settings/

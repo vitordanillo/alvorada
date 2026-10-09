@@ -106,15 +106,15 @@ export function UserManagementTable({ users, onUpdateRole, onCreateUser }: UserM
             </TableRow>
           </TableHeader>
           <TableBody>
-            {users.map((user) => (
-              <TableRow key={user.uid}>
+            {users.map((user, index) => (
+              <TableRow key={user.uid || user.email || `cached-user-${index}`}>
                 <TableCell>
                   <div className="flex items-center gap-3">
                     <Avatar className="h-9 w-9">
                       <AvatarImage src={user.avatarUrl || `https://placehold.co/40x40.png`} alt="Avatar" data-ai-hint="person avatar" />
-                      <AvatarFallback>{user.name.charAt(0).toUpperCase()}</AvatarFallback>
+                      <AvatarFallback>{user.name?.trim().charAt(0).toUpperCase() || '?'}</AvatarFallback>
                     </Avatar>
-                    <div className="font-medium">{user.name}</div>
+                    <div className="font-medium">{user.name || user.email || 'Usuário'}</div>
                   </div>
                 </TableCell>
                 <TableCell>{user.email}</TableCell>
@@ -122,7 +122,7 @@ export function UserManagementTable({ users, onUpdateRole, onCreateUser }: UserM
                   <Select
                     defaultValue={user.role}
                     onValueChange={(newRole: User['role']) => handleRoleChange(user.uid, newRole)}
-                    disabled={user.uid === currentUser?.uid}
+                    disabled={!user.uid || user.uid === currentUser?.uid}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione uma permissão" />
