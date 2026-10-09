@@ -76,7 +76,7 @@ export function SidebarNav() {
     <div className="flex h-full flex-col p-4">
       <div className="flex items-center gap-2 pb-4 mb-4 border-b">
         <Logo className="w-8 h-8" />
-        <div className="group-data-[collapsible=icon]:hidden"><span className="font-bold font-headline text-lg">Granzoti Sistemas</span><p className="text-xs text-muted-foreground">por Firma Conecta</p></div>
+        <div className="group-data-[collapsible=icon]:hidden"><span className="font-bold font-headline text-lg">Granzoti Sistemas</span></div>
       </div>
       {(!isClient || loadingAuth) ? renderSkeletons() : (
         <SidebarMenu className="flex-1">

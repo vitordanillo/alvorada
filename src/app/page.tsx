@@ -45,7 +45,7 @@ export default function LoginPage() {
         <CardHeader className="space-y-2 text-center">
           <div className="mx-auto w-full max-w-[260px] rounded-xl bg-white p-3"><BrandLogo className="h-auto w-full" /></div>
           <CardTitle className="sr-only">Granzoti Sistemas</CardTitle>
-          <CardDescription>Gestão de lojas por Firma Conecta.</CardDescription>
+          <CardDescription>Gestão de lojas com Granzoti Sistemas.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">

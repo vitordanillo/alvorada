@@ -75,7 +75,7 @@ export function ProfilePanel({initialProfile}:{initialProfile:Profile}){
             </form>
           </CardContent></Card>
           <Card><CardHeader><CardTitle>Acessos da conta</CardTitle><CardDescription>Permissões definidas pela administração.</CardDescription></CardHeader><CardContent className="space-y-3">
-            {profile.isPlatformAdmin?<div className="rounded-lg bg-blue-50 p-4 text-blue-950"><p className="flex items-center gap-2 font-medium"><ShieldCheck size={18}/>Administrador da plataforma</p><p className="mt-1 text-sm">Acesso global à Firma Conecta, independente de uma loja.</p></div>:profile.stores.map(store=><div key={store.id} className="rounded-lg border p-3"><p className="font-medium">{store.name}</p><p className="text-sm text-muted-foreground">{store.role} · {store.status}</p></div>)}
+            {profile.isPlatformAdmin?<div className="rounded-lg bg-blue-50 p-4 text-blue-950"><p className="flex items-center gap-2 font-medium"><ShieldCheck size={18}/>Administrador da plataforma</p><p className="mt-1 text-sm">Acesso global à Granzoti Sistemas, independente de uma loja.</p></div>:profile.stores.map(store=><div key={store.id} className="rounded-lg border p-3"><p className="font-medium">{store.name}</p><p className="text-sm text-muted-foreground">{store.role} · {store.status}</p></div>)}
             {user?.isPlatformAdmin&&user.storeId&&<p className="text-sm text-muted-foreground">Você está em suporte na loja {user.store?.name}. Alterações neste perfil pertencem à sua conta global.</p>}
             <p className="text-xs text-muted-foreground">Conta criada em {new Date(profile.createdAt).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'})}.</p>
           </CardContent></Card>

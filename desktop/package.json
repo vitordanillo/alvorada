@@ -1,8 +1,8 @@
 {
   "name": "alvorada-desktop",
   "version": "1.0.4",
-  "description": "Granzoti Sistemas — Firma Conecta",
-  "author": "Firma Conecta",
+  "description": "Granzoti Sistemas",
+  "author": "Granzoti Sistemas",
   "private": true,
   "main": "main.cjs",
   "scripts": {

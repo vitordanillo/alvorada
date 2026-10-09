@@ -79,14 +79,14 @@ export async function withAuthenticatedAction<T>(operation: () => Promise<T>, sc
   const cached=currentDbUser();
   if (cached) {
     if(scope!=='identity'&&cached.mustChangePassword)throw new Error('Troque sua senha temporária no Perfil antes de continuar.');
-    if (scope==='platform' && !cached.isPlatformAdmin) throw new Error('Acesso restrito à administração da Firma Conecta.');
+    if (scope==='platform' && !cached.isPlatformAdmin) throw new Error('Acesso restrito à administração da Granzoti Sistemas.');
     if (scope==='store' && !cached.storeId) throw new Error('Selecione uma loja ativa para continuar.');
     return operation();
   }
   const user=await currentUser();
   if (!user) throw new Error('Usuário não autenticado.');
   if(scope!=='identity'&&user.mustChangePassword)throw new Error('Troque sua senha temporária no Perfil antes de continuar.');
-  if (scope==='platform' && !user.isPlatformAdmin) throw new Error('Acesso restrito à administração da Firma Conecta.');
+  if (scope==='platform' && !user.isPlatformAdmin) throw new Error('Acesso restrito à administração da Granzoti Sistemas.');
   if (scope==='store' && !user.storeId) throw new Error('Selecione uma loja ativa para continuar.');
   return withDbContext({uid:user.uid,email:'',storeId:scope==='platform' ? '' : user.storeId,platformAdmin:scope==='platform' && user.isPlatformAdmin,user},operation);
 }

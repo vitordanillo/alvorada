@@ -77,7 +77,7 @@ export function Receipt({ sale }: ReceiptProps) {
       </div>
 
       <div className="text-center mt-4 text-xs">
-        <p className="text-xs">Granzoti Sistemas · Firma Conecta</p>
+        <p className="text-xs">Granzoti Sistemas</p>
         <p>Obrigado pela sua preferência!</p>
         <p className="font-bold">*** Este não é um documento fiscal ***</p>
       </div>

@@ -39,7 +39,7 @@ function menu() {
     ]},
     {label:'Editar',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},
     {label:'Exibir',submenu:[{role:'reload'},{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{role:'togglefullscreen'}]},
-    {label:'Ajuda',submenu:[{label:'Sobre o Granzoti Sistemas',click:()=>dialog.showMessageBox(win,{message:'Granzoti Sistemas — Firma Conecta',detail:`Versão ${app.getVersion()}\nGestão de lojas com operação offline e atualização automática.`})}]}
+    {label:'Ajuda',submenu:[{label:'Sobre o Granzoti Sistemas',click:()=>dialog.showMessageBox(win,{message:'Granzoti Sistemas',detail:`Versão ${app.getVersion()}\nGestão de lojas com operação offline e atualização automática.`})}]}
   ]));
 }
 async function checkUpdates(manual = false) {
@@ -70,7 +70,7 @@ else {
   app.on('second-instance',()=>{if(win){if(win.isMinimized())win.restore();win.focus();}});
   app.whenReady().then(async()=>{
     storage=new Storage(app.getPath('userData'));
-    win=new BrowserWindow({width:1440,height:940,minWidth:1000,minHeight:700,title:'Granzoti Sistemas — Firma Conecta',backgroundColor:'#f8fafc',icon:path.join(__dirname,'assets/icon.ico'),webPreferences:{preload:path.join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,partition:'persist:alvorada'}});
+    win=new BrowserWindow({width:1440,height:940,minWidth:1000,minHeight:700,title:'Granzoti Sistemas',backgroundColor:'#f8fafc',icon:path.join(__dirname,'assets/icon.ico'),webPreferences:{preload:path.join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,partition:'persist:alvorada'}});
     appSession=win.webContents.session;
     localShell=new LocalShell(appSession,storage);
     win.webContents.on('will-navigate',(event,url)=>{if(new URL(url).origin!==ORIGIN){event.preventDefault();}});
@@ -90,7 +90,7 @@ else {
     ipcMain.handle('alvorada:retry',async event=>{if(event.sender!==win.webContents||event.senderFrame.url!==require('node:url').pathToFileURL(recovery).href)throw new Error('Origem não autorizada.');await openApp();});
     win.on('closed',()=>{win=null;});
     menu();setupUpdater();await openApp();
-  }).catch(async error=>{log(`startup: ${error.message}`);await dialog.showMessageBox({type:'error',message:'Não foi possível abrir o Granzoti Sistemas.',detail:'Os dados locais foram preservados. Consulte o suporte da Firma Conecta.'});app.exit(1);});
+  }).catch(async error=>{log(`startup: ${error.message}`);await dialog.showMessageBox({type:'error',message:'Não foi possível abrir o Granzoti Sistemas.',detail:'Os dados locais foram preservados. Consulte o suporte da Granzoti Sistemas.'});app.exit(1);});
   app.on('before-quit',event=>{
     if(shuttingDown||installing)return;
     if(closing){event.preventDefault();return;}
