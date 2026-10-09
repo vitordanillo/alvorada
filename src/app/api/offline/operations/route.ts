@@ -15,6 +15,8 @@ export async function POST(request:NextRequest){
     const body=await request.text();
     if(Buffer.byteLength(body)>350000)return NextResponse.json({error:'Operação muito grande.'},{status:413});
     let input;try{input=JSON.parse(body);}catch{return NextResponse.json({error:'Operação inválida.'},{status:400});}
-    return NextResponse.json(await submitOfflineOperationAction(input),{headers:{'Cache-Control':'no-store'}});
+    const result=await submitOfflineOperationAction(input);
+    if(!result.ok&&result.error==='Usuário não autenticado.')return NextResponse.json({error:'Entre novamente para sincronizar. As pendências continuam salvas.'},{status:401});
+    return NextResponse.json(result,{headers:{'Cache-Control':'no-store'}});
   }catch{return NextResponse.json({error:'Servidor indisponível. As operações continuam salvas.'},{status:503});}
 }

@@ -23,6 +23,9 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Não foi possível preparar a release.'}
   }
   $desktop=Join-Path $candidate 'desktop'
+  $expectedRevision=(& git -c "safe.directory=$repository" -C $repository rev-parse "$tag`^{commit}").Trim()
+  $actualRevision=(& git -c "safe.directory=$candidate" -C $candidate rev-parse HEAD).Trim()
+  if($expectedRevision -ne $actualRevision){throw 'Checkout da release divergente da tag.'}
   if((Get-Content -Raw (Join-Path $desktop 'package.json') | ConvertFrom-Json).version -ne $version){throw 'Tag e versão do aplicativo divergem.'}
   Set-Location -LiteralPath $desktop
   & 'C:\Program Files\nodejs\npm.cmd' ci --no-audit --no-fund
