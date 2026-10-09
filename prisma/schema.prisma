@@ -47,6 +47,7 @@ model User {
   email           String            @unique
   isPlatformAdmin Boolean           @default(false)
   disabled        Boolean           @default(false)
+  mustChangePassword Boolean @default(false)
   sessionVersion  Int               @default(0)
   memberships     StoreMembership[]
   passwordHash    String
@@ -82,6 +83,7 @@ model Product {
   costHistory Json // Array<{ date: string, quantity: number, cost: number }>
   stock       Float
   minStock    Float
+  measurement Json?
   unit        String
   supplier    String
   barcode     String?
@@ -189,6 +191,7 @@ model CashRegisterSession {
   closedByUid            String?
   closedByName           String?
   correction             Json? // { date: string, user: { uid: string, name: string }, oldValue: number, newValue: number }
+  closingByPaymentMethod Json?
   openingCorrection      Json? // { date: string, user: { uid: string, name: string }, oldValue: number, newValue: number }
   storeId                String
   store                  Store     @relation(fields: [storeId], references: [id], onDelete: Restrict)
@@ -396,6 +399,19 @@ model Invoice {
   paymentReference String?
   notes String @default("")
   createdAt DateTime @default(now())
+  attachments InvoiceAttachment[]
   @@unique([subscriptionId, dueDate])
   @@index([status, dueDate])
+}
+
+model InvoiceAttachment {
+ id String @id @default(uuid())
+ invoiceId String
+ invoice Invoice @relation(fields:[invoiceId], references:[id], onDelete:Restrict)
+ filename String
+ mimeType String
+ size Int
+ createdAt DateTime @default(now())
+ uploadedBy String
+ @@index([invoiceId])
 }

@@ -71,7 +71,7 @@ export function SalesTable({ sales, onCancel }: SalesTableProps) {
                   <TableCell>
                     {sale.status === 'Cancelada' ? (
                       <Badge variant="destructive">Cancelada</Badge>
-                    ) : (
+                    ) : sale.status === 'Pendente' ? <Badge variant="outline">Pendente</Badge> : (
                       <Badge variant="secondary" className="bg-green-100 text-green-800">Concluída</Badge>
                     )}
                   </TableCell>
@@ -98,7 +98,7 @@ export function SalesTable({ sales, onCancel }: SalesTableProps) {
                         <DropdownMenuSeparator />
                         <DropdownMenuItem 
                           onClick={() => onCancel(sale)} 
-                          disabled={sale.status === 'Cancelada'}
+                          disabled={sale.status !== 'Concluída'}
                           className="text-destructive focus:bg-destructive/10 focus:text-destructive"
                         >
                           <XCircle className="mr-2 h-4 w-4" /> Cancelar Venda

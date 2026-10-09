@@ -205,8 +205,8 @@ export default function POSPage() {
         setIsPaymentDialogOpen(false);
         
         toast({
-          title: 'Compra finalizada com sucesso!',
-          description: `Venda ${newSale.id} registrada.`,
+          title: newSale.status==='Pendente'?'Venda salva como pendente':'Compra finalizada com sucesso!',
+          description: newSale.status==='Pendente'?'A confirmação será feita na sincronização. Consulte as pendências.':`Venda ${newSale.id} registrada.`,
           action: <ToastAction altText="Ver Recibo" onClick={() => handleViewReceipt(newSale)}>Ver Recibo</ToastAction>,
           className: 'bg-green-100 border-green-500 text-green-800'
         });

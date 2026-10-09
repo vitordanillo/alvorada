@@ -9,7 +9,7 @@ import { withAuthenticatedAction, setAuthCookie, resolveUser } from './auth';
 import { prisma, withDbContext, withTransaction, currentDbUser } from './db';
 import { recordLoginAttempt, clearLoginAttempts } from './login-rate-limit';
 
-const identity = {uid:true,name:true,email:true,avatarUrl:true,createdAt:true,sessionVersion:true} as const;
+const identity = {uid:true,name:true,email:true,avatarUrl:true,createdAt:true,sessionVersion:true,mustChangePassword:true} as const;
 const avatarDir=()=>process.env.ALVORADA_AVATAR_DIR || path.resolve(process.cwd(),'uploads','avatars');
 const avatarFile=(url:string)=>/^\/api\/avatars\/([a-f0-9-]{36})\/([a-f0-9-]{36})\.webp$/.exec(url);
 
@@ -80,7 +80,7 @@ async function secureSessionChange(currentPassword:string,newPassword?:string){
     await withDbContext({profileWrite:true},()=>withTransaction(async()=>{
       const record=await prisma.user.findUniqueOrThrow({where:{uid:user.uid},select:{passwordHash:true,sessionVersion:true}});
       if(!(await bcrypt.compare(currentPassword,record.passwordHash)))throw new Error('A senha atual está incorreta.');
-      const changed=await prisma.user.updateMany({where:{uid:user.uid,sessionVersion:record.sessionVersion},data:{sessionVersion:{increment:1},...(newPassword?{passwordHash:await bcrypt.hash(newPassword,12)}:{})}});
+      const changed=await prisma.user.updateMany({where:{uid:user.uid,sessionVersion:record.sessionVersion},data:{sessionVersion:{increment:1},...(newPassword?{passwordHash:await bcrypt.hash(newPassword,12),mustChangePassword:false}:{})}});
       if(changed.count!==1)throw new Error('A conta foi alterada. Entre novamente para continuar.');
       await profileAudit(newPassword?'Alterar própria senha':'Encerrar outras sessões');
     }));

@@ -98,8 +98,8 @@ export function ReceiveOrderDialog({ order, open, onOpenChange, onSubmit }: Rece
                 <div className="space-y-4">
                 {fields.map((field, index) => (
                     <div key={field.id} className="p-4 border rounded-lg bg-muted/50 space-y-2">
-                        <p className="font-semibold">{field.productName}</p>
-                        <div className="grid grid-cols-4 gap-4 items-end">
+                        <p className="font-semibold">{field.productName}</p><p className="text-sm">Pendente antes: {field.quantityOrdered-field.quantityAlreadyReceived} · Após receber: {field.quantityOrdered-field.quantityAlreadyReceived-(Number(watchedItems[index]?.quantityReceived)||0)} · Custo do pedido: R$ {order?.items[index]?.cost.toFixed(2)}</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 items-end">
                              <div>
                                 <Label>Pedido</Label>
                                 <p className="font-mono text-sm h-10 flex items-center">{field.quantityOrdered}</p>

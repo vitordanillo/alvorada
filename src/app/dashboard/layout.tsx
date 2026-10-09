@@ -4,7 +4,8 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { SidebarProvider, Sidebar, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
-import { Input } from '@/components/ui/input';
+import { DataNavigation } from '@/components/layout/data-navigation';
+import { GlobalSearch } from '@/components/layout/global-search';
 import { Search, Loader2 } from 'lucide-react';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { StoreSelector } from '@/components/layout/store-selector';
@@ -17,12 +18,13 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loadingAuth, dataError } = useAuth();
+  const { user, loadingAuth, dataError, retryData } = useAuth();
   const router = useRouter();
   const pathname=usePathname();
 
   useEffect(() => {
     // Se o carregamento terminou e não há usuário, redireciona para o login.
+    if(user?.mustChangePassword){router.replace('/profile');return;}
     if (!loadingAuth && !user) {
       router.push('/');
     } else if (!loadingAuth && user && !user.storeId && pathname!=='/dashboard/platform') {
@@ -53,18 +55,11 @@ export default function DashboardLayout({
                 <StoreSelector />
             </div>
             <div className="flex flex-1 items-center gap-4 md:ml-auto md:flex-none">
-                <div className="relative ml-auto flex-1 md:grow-0">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                        type="search"
-                        placeholder="Buscar..."
-                        className="w-full rounded-lg bg-background pl-10 md:w-[200px] lg:w-[320px]"
-                    />
-                </div>
+                <GlobalSearch />
                 <UserNav />
             </div>
         </header>
-        <main className="flex-1 p-6">{dataError && <p role="alert" className="mb-4 rounded-md border border-destructive p-3 text-destructive">{dataError}</p>}{children}</main>
+        <main className="flex-1 p-6">{dataError && <p role="alert" className="mb-4 rounded-md border border-destructive p-3 text-destructive">{dataError} <button className="ml-3 underline" onClick={()=>void retryData()}>Tentar novamente</button></p>}<DataNavigation />{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );

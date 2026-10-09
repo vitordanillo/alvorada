@@ -1,6 +1,7 @@
 
 'use client';
 
+import {PermissionsMatrix} from '@/components/settings/permissions-matrix';
 import { StoreDetailsCard } from "@/components/settings/store-details-card";
 import { PageHeader } from "@/components/page-header";
 import { UserManagementTable } from "@/components/settings/user-management-table";
@@ -40,6 +41,7 @@ export default function SettingsPage() {
         title="Configurações"
         description="Gerencie as configurações da sua loja e do sistema."
       />
+      <PermissionsMatrix/>
       <StoreDetailsCard />
       {loading.allUsers ? (
         <Card className="rounded-2xl border-none shadow-sm bg-card">

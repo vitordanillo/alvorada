@@ -1,12 +1,29 @@
 // Utility to manage IndexedDB for Offline-First POS
 const databaseName = (scope: string) => { if(!scope || !/^[a-zA-Z0-9:-]+$/.test(scope)) throw new Error('Loja e usuário são obrigatórios para o cache.'); return `AlvoradaOfflineV2:${scope}`; };
 const DB_VERSION = 1;
+function safeCache(key:string,value:any){
+ if(key==='lastSync')return typeof value==='string'&&Number.isFinite(Date.parse(value))?value:null;
+ if(key==='systemSettings')return value&&typeof value==='object'?{cancellationPasswordConfigured:!!value.cancellationPasswordConfigured}:null;
+ if(!Array.isArray(value))return [];
+ return value.filter(row=>{
+  if(!row||typeof row!=='object')return false;
+  if(key==='allUsers')return typeof row.uid==='string'&&typeof row.email==='string';
+  if(typeof row.id!=='string')return false;
+  if(key==='products')return typeof row.name==='string'&&Number.isFinite(row.stock)&&Number.isFinite(row.price)&&Number.isFinite(row.averageCost)&&Array.isArray(row.costHistory);
+  if(key==='customers')return typeof row.name==='string'&&Number.isFinite(row.balance)&&Number.isFinite(row.creditLimit)&&Number.isFinite(row.loyaltyPoints);
+  if(key==='sales')return Number.isFinite(Date.parse(row.date))&&Number.isFinite(row.total)&&Array.isArray(row.items)&&Array.isArray(row.paymentMethods)&&['Concluída','Cancelada','Pendente'].includes(row.status);
+  if(key==='cashSessions')return Number.isFinite(Date.parse(row.openingTime))&&Number.isFinite(row.calculatedCashInDrawer)&&row.openedBy&&['Aberto','Fechado'].includes(row.status);
+  return true;
+ });
+}
 
 export interface OfflineSale {
   id: string; // Temporary UUID
   saleData: any;
   activeSessionId: string;
   createdAt: string;
+  lastError?: string;
+  attempts?: number;
 }
 
 export async function getLegacyQueuedSales(): Promise<OfflineSale[]> {
@@ -96,7 +113,7 @@ export async function getFromCache<T>(scope: string, key: string): Promise<T | n
       const request = store.get(key);
       transaction.oncomplete = () => db.close();
 
-      request.onsuccess = () => resolve(request.result || null);
+      request.onsuccess = () => resolve(safeCache(key,request.result) as T);
       request.onerror = () => reject(request.error);
     });
   } catch (err) {
@@ -137,7 +154,7 @@ export async function getQueuedSales(scope: string): Promise<OfflineSale[]> {
     });
   } catch (err) {
     console.error('Failed to get queued sales:', err);
-    return [];
+    throw err;
   }
 }
 
@@ -155,5 +172,6 @@ export async function removeQueuedSale(scope: string, id: string): Promise<void>
     });
   } catch (err) {
     console.error('Failed to remove queued sale:', err);
+    throw err;
   }
 }

@@ -17,6 +17,7 @@ export function Receipt({ sale }: ReceiptProps) {
   const issuer=sale.storeSnapshot ?? user?.store;
   return (
     <div className="bg-background text-foreground p-4 font-mono text-sm">
+      {sale.status==='Pendente'&&<p className="mb-4 text-center font-bold">VENDA PENDENTE — AGUARDANDO CONFIRMAÇÃO DO SERVIDOR</p>}
       <div className="text-center mb-4">
         <Logo className="w-12 h-12 mx-auto mb-2 text-primary" />
         <h2 className="text-lg font-bold">{issuer?.name ?? 'Loja'}</h2>
@@ -51,7 +52,7 @@ export function Receipt({ sale }: ReceiptProps) {
                 <br />
                 <span className="text-muted-foreground">(R$ {item.price.toFixed(2).replace('.', ',')})</span>
               </td>
-              <td className="text-center py-1">{item.quantity}</td>
+              <td className="text-center py-1">{item.quantity}{item.measurement&&<span className="block text-[10px]">{(item.quantity*item.measurement.factor).toLocaleString('pt-BR')} {item.measurement.baseUnit}</span>}</td>
               <td className="text-right py-1">R$ {(item.quantity * item.price).toFixed(2).replace('.', ',')}</td>
             </tr>
           ))}

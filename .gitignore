@@ -46,3 +46,5 @@ next-env.d.ts
 /.next-profile/
 /uploads/
 /supabase/.temp/
+
+/.next-improvements/

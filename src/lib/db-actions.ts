@@ -7,6 +7,8 @@ import { cookies } from 'next/headers';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
 import { recordLoginAttempt, clearLoginAttempts } from './login-rate-limit';
+import {validMeasurement} from './measure-units';
+import { dataPlan } from './data-plan';
 import { processSale } from './sales-service';
 import { ensureUserCapacity } from './billing';
 import type {
@@ -42,6 +44,7 @@ const mapProduct = (p: any): Product => ({
   stock: p.stock,
   minStock: p.minStock,
   unit: p.unit,
+  measurement:p.measurement??undefined,
   supplier: p.supplier,
   barcode: p.barcode || undefined,
   imageUrl: p.imageUrl || undefined,
@@ -115,6 +118,7 @@ const mapCashSession = (cs: any): CashRegisterSession => ({
   closedBy: cs.closedByUid && cs.closedByName ? { uid: cs.closedByUid, name: cs.closedByName } : null,
   correction: cs.correction as any,
   openingCorrection: cs.openingCorrection as any,
+  closingByPaymentMethod:cs.closingByPaymentMethod as any,
 });
 
 const mapCashTransaction = (t: any): CashTransaction => ({
@@ -269,17 +273,19 @@ export async function getLegacyOfflineSessionsAction(sessionIds: string[], expec
   });
 }
 
-export async function updateUserRoleAction(uid: string, role: User['role'], expectedStoreId?: string): Promise<void> {
+export async function updateUserRoleAction(uid: string, role: User['role'], expectedStoreId?: string, reason?:string): Promise<void> {
   return withAuthenticatedAction(async () => {
   if (!expectedStoreId || expectedStoreId !== (await getAuthenticatedUser()).storeId) throw new Error('A loja ativa mudou. Atualize a página para continuar.');
   const user=await verifyUserRole(['Administrador']);
   if (!['Administrador','Gerente','Operador de Caixa','Estoquista'].includes(role)) throw new Error('Cargo inválido.');
+  if(!reason||reason.trim().length<5||reason.length>500)throw new Error('Informe o motivo da alteração de cargo.');
   if (uid===user.uid) throw new Error('Você não pode alterar sua própria permissão.');
   await withTransaction(async tx=>{
     const target=await tx.storeMembership.findUnique({where:{userId_storeId:{userId:uid,storeId:user.storeId!}},include:{user:{select:{name:true}}}});
     if (!target) throw new Error('Usuário não encontrado nesta loja.');
+    if(target.role==='Administrador'&&role!=='Administrador'&&await tx.storeMembership.count({where:{storeId:user.storeId,role:'Administrador',user:{disabled:false}}})<=1)throw new Error('Vincule outro administrador ativo antes de alterar este cargo.');
     await tx.storeMembership.update({where:{userId_storeId:{userId:uid,storeId:user.storeId!}},data:{role}});
-    await logAuditEvent('Alterar Cargo de Usuário', 'Cargo de '+target.user.name+' alterado para '+role+' por '+user.name);
+    await logAuditEvent('Alterar Cargo de Usuário', 'Cargo de '+target.user.name+' alterado para '+role+' por '+user.name+'. Motivo: '+reason);
   });
 
   });
@@ -287,19 +293,29 @@ export async function updateUserRoleAction(uid: string, role: User['role'], expe
 
 // --- INITIAL DATA FETCH ACTION ---
 
-export async function getInitialDataAction(expectedStoreId?: string) {
+export async function getInitialDataAction(expectedStoreId?: string, path = '/pos', requestedPage = 1, query = '', from = '', to = '') {
   return withAuthenticatedAction(async () => {
   if (!expectedStoreId || expectedStoreId !== (await getAuthenticatedUser()).storeId) throw new Error('A loja ativa mudou. Atualize a página para continuar.');
   const user = await getAuthenticatedUser();
   const role = user.role;
   const storeFilter = { storeId: user.storeId };
+  const {main,needed}=dataPlan(path);const page=Math.max(1,Math.min(100000,Math.floor(Number(requestedPage)||1))),pageSize=50;
+  const q=typeof query==='string'?query.trim().slice(0,80):'';
+  const options=(key:string)=>({take:key===main?pageSize:key==='products'||key==='customers'||key==='suppliers'?5000:100,skip:key===main?(page-1)*pageSize:0});
+  const filters=(key:string):any=>{
+    if(key!==main||!q)return storeFilter;
+    const fields=key==='products'?['id','name','sku','barcode']:key==='sales'?['id','customerName']:key==='cashSessions'?['id','openedByName']:key==='accountsPayable'?['id','description']:key==='purchaseOrders'?['id','supplierName']:['id','name'];
+    return {...storeFilter,OR:fields.map(key=>({[key]:{contains:q,mode:'insensitive'}}))};
+  };
+  const saleFilter:any=filters('sales');
+  if(main==='sales'&&from&&to&&/^\d{4}-\d{2}-\d{2}$/.test(from)&&/^\d{4}-\d{2}-\d{2}$/.test(to)){const end=new Date(to+'T00:00:00-03:00');end.setUTCDate(end.getUTCDate()+1);saleFilter.date={gte:new Date(from+'T00:00:00-03:00'),lt:end};}
 
-  const productsPromise = prisma.product.findMany({ where: storeFilter });
-  const customersPromise = prisma.customer.findMany({ where: storeFilter });
-  const salesPromise = prisma.sale.findMany({ where: storeFilter, orderBy: { date: 'desc' } });
-  const suppliersPromise = prisma.supplier.findMany({ where: storeFilter });
-  const cashSessionsPromise = prisma.cashRegisterSession.findMany({ where: storeFilter, orderBy: { openingTime: 'desc' } });
-  const stockAdjustmentLogsPromise = prisma.stockAdjustmentLog.findMany({ where: storeFilter, orderBy: { date: 'desc' } });
+  const productsPromise = needed.has('products')?prisma.product.findMany({where:filters('products'),orderBy:{name:'asc'},...options('products')}):Promise.resolve([]);
+  const customersPromise = needed.has('customers')?prisma.customer.findMany({where:filters('customers'),orderBy:{name:'asc'},...options('customers')}):Promise.resolve([]);
+  const salesPromise = needed.has('sales')?prisma.sale.findMany({where:saleFilter,orderBy:[{date:'desc'},{id:'desc'}],...options('sales')}):Promise.resolve([]);
+  const suppliersPromise = needed.has('suppliers')?prisma.supplier.findMany({where:filters('suppliers'),orderBy:{name:'asc'},...options('suppliers')}):Promise.resolve([]);
+  const cashSessionsPromise = needed.has('cashSessions')?prisma.cashRegisterSession.findMany({where:filters('cashSessions'),orderBy:[{status:'asc'},{openingTime:'desc'}],...options('cashSessions')}):Promise.resolve([]);
+  const stockAdjustmentLogsPromise = needed.has('stockAdjustmentLogs')?prisma.stockAdjustmentLog.findMany({where:filters('stockAdjustmentLogs'),orderBy:{date:'desc'},...options('stockAdjustmentLogs')}):Promise.resolve([]);
 
   const isManagement = role === 'Administrador' || role === 'Gerente';
 
@@ -321,14 +337,14 @@ export async function getInitialDataAction(expectedStoreId?: string) {
 
   if (isManagement) {
     const promises: Promise<any>[] = [
-      prisma.stockEntryLog.findMany({ where: storeFilter, orderBy: { date: 'desc' } }),
-      prisma.productChangeLog.findMany({ where: storeFilter, orderBy: { date: 'desc' } }),
-      prisma.accountsPayable.findMany({ where: storeFilter, orderBy: { dueDate: 'asc' } }),
-      prisma.purchaseOrder.findMany({ where: storeFilter, orderBy: { dateCreated: 'desc' } }),
+      needed.has('stockEntryLogs')?prisma.stockEntryLog.findMany({where:filters('stockEntryLogs'),orderBy:{date:'desc'},...options('stockEntryLogs')}):Promise.resolve([]),
+      needed.has('productChangeLogs')?prisma.productChangeLog.findMany({where:filters('productChangeLogs'),orderBy:{date:'desc'},...options('productChangeLogs')}):Promise.resolve([]),
+      needed.has('accountsPayable')?prisma.accountsPayable.findMany({where:filters('accountsPayable'),orderBy:[{dueDate:'asc'},{id:'asc'}],...options('accountsPayable')}):Promise.resolve([]),
+      needed.has('purchaseOrders')?prisma.purchaseOrder.findMany({where:filters('purchaseOrders'),orderBy:[{dateCreated:'desc'},{id:'desc'}],...options('purchaseOrders')}):Promise.resolve([]),
     ];
 
     if (role === 'Administrador') {
-      promises.push(prisma.storeMembership.findMany({ where: storeFilter, include: { user: { select: { uid: true, name: true, email: true, avatarUrl: true } } } }));
+      promises.push(prisma.storeMembership.findMany({ where: needed.has('allUsers')?storeFilter:{storeId:'__none__'}, take:5000, include: { user: { select: { uid: true, name: true, email: true, avatarUrl: true, disabled:true, sessionVersion:true, mustChangePassword:true } } } }));
       promises.push(prisma.systemConfig.findUnique({ where: { key: `config:${user.storeId}` } }));
     }
 
@@ -344,6 +360,7 @@ export async function getInitialDataAction(expectedStoreId?: string) {
         name: u.user.name,
         email: u.user.email,
         role: u.role as any,
+        disabled:u.user.disabled,sessionVersion:u.user.sessionVersion,mustChangePassword:u.user.mustChangePassword,
         avatarUrl: u.user.avatarUrl || undefined,
       }));
       systemSettings = results[5]
@@ -352,7 +369,12 @@ export async function getInitialDataAction(expectedStoreId?: string) {
     }
   }
 
+  const delegate:any=main?({products:prisma.product,customers:prisma.customer,sales:prisma.sale,suppliers:prisma.supplier,cashSessions:prisma.cashRegisterSession,accountsPayable:prisma.accountsPayable,purchaseOrders:prisma.purchaseOrder} as any)[main]:null;
+  const total=delegate?await delegate.count({where:main==='sales'?saleFilter:filters(main)}):0;
+  const catalogCounts=path==='/pos'?await Promise.all([prisma.product.count({where:storeFilter}),prisma.customer.count({where:storeFilter})]):[0,0];
+  if(role==='Estoquista'&&needed.has('purchaseOrders'))purchaseOrders=(await prisma.purchaseOrder.findMany({where:filters('purchaseOrders'),orderBy:[{dateCreated:'desc'},{id:'desc'}],...options('purchaseOrders')})).map(mapPurchaseOrder);
   return {
+    meta:{main,page,pageSize,total,catalogLimited:catalogCounts.some(n=>n>5000)},
     store: user.store,
     products: products.map(mapProduct),
     customers: customers.map(mapCustomer),
@@ -438,7 +460,8 @@ export async function addProductAction(productData: ProductFormData, expectedSto
         stock: productData.stock,
         minStock: productData.minStock,
         unit: productData.unit,
-        supplier: productData.supplier,
+        measurement:validMeasurement(productData.measurement)??Prisma.DbNull,
+        supplier: productData.supplier?.trim()??'',
         barcode: productData.barcode || null,
         imageUrl: (productData as any).imageUrl || null,
         expiryDate: (productData as any).expiryDate ? new Date((productData as any).expiryDate) : null,
@@ -467,7 +490,7 @@ export async function updateProductAction(updatedProductData: Product, expectedS
     if (!oldProduct) throw new Error("Produto não encontrado.");
 
     const changes: any[] = [];
-    const fieldsToLog: (keyof Product)[] = ['name', 'price', 'category', 'supplier', 'minStock', 'unit', 'barcode'];
+    const fieldsToLog: (keyof Product)[] = ['name', 'price', 'category', 'supplier', 'minStock', 'unit', 'barcode', 'measurement'];
 
     fieldsToLog.forEach(field => {
       const oldValue = (oldProduct as any)[field];
@@ -491,7 +514,8 @@ export async function updateProductAction(updatedProductData: Product, expectedS
         price: data.price,
         minStock: data.minStock,
         unit: data.unit,
-        supplier: data.supplier,
+        measurement:validMeasurement(data.measurement)??Prisma.DbNull,
+        supplier: data.supplier?.trim()??'',
         barcode: data.barcode || null,
         imageUrl: data.imageUrl || null,
         expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
@@ -612,6 +636,7 @@ export async function adjustStockAction(
   return withAuthenticatedAction(async () => {
   if (!expectedStoreId || expectedStoreId !== (await getAuthenticatedUser()).storeId) throw new Error('A loja ativa mudou. Atualize a página para continuar.');
   const user = await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
+  if(!Number.isFinite(newQuantity)||newQuantity<0||!reason||typeof reason!=='string'||!reason.trim())throw new Error('Informe quantidade válida e motivo do ajuste.');
   await withTransaction(async (tx) => {
     const product = await tx.product.findUnique({ where: { id: productId, storeId: user.storeId } });
     if (!product) throw new Error("Produto não encontrado.");
@@ -766,6 +791,15 @@ export async function addSaleAction(saleData: Omit<Sale, 'id' | 'date' | 'status
   });
 }
 
+export async function submitSaleAction(saleData: Omit<Sale, 'id' | 'date' | 'status'>, sessionId:string,storeId?:string){
+  try{return {ok:true as const,sale:await addSaleAction(saleData,sessionId,storeId)};}
+  catch(error){
+    const message=error instanceof Error?error.message:'';
+    const confirmedRejected=/^(Carrinho inválido|Informe o pagamento|Pagamento inválido|Loja indisponível|Abra o caixa|Produto repetido|Produto indisponível|O preço do produto|Total da venda|O pagamento deve|Cliente não encontrado|Selecione um cliente|Limite de crédito|Pontos de fidelidade|Usuário não autenticado|A loja ativa mudou|Acesso negado|Identificador da venda)/.test(message);
+    return {ok:false as const,confirmedRejected,error:confirmedRejected?message:'A confirmação não chegou. A venda permanece pendente e será reenviada com o mesmo identificador.'};
+  }
+}
+
 export async function cancelSaleAction(
   saleId: string,
   reason: string,
@@ -918,81 +952,44 @@ export async function openCashRegisterAction(openingBalance: number, expectedSto
   });
 }
 
-export async function closeCashRegisterAction(sessionId: string, closingBalance: number, expectedStoreId?: string): Promise<void> {
-  return withAuthenticatedAction(async () => {
-  if (!expectedStoreId || expectedStoreId !== (await getAuthenticatedUser()).storeId) throw new Error('A loja ativa mudou. Atualize a página para continuar.');
-  const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
-  await prisma.cashRegisterSession.update({
-    where: { id: sessionId, storeId: user.storeId },
-    data: {
-      status: 'Fechado',
-      closingTime: new Date(),
-      closingBalance,
-      closedByUid: user.uid,
-      closedByName: user.name,
-    }
-  });
-
-  await logAuditEvent('Fechamento de Caixa', `Caixa fechado com saldo informado de R$ ${closingBalance.toFixed(2)} por ${user.name}`);
-
-  });
+export async function closeCashRegisterAction(sessionId:string,closingBalance:number,expectedStoreId?:string,counted?:Record<string,number>):Promise<void>{
+ return withAuthenticatedAction(async()=>{
+ const user=await verifyUserRole(['Administrador','Gerente','Operador de Caixa']);if(expectedStoreId!==user.storeId)throw new Error('A loja ativa mudou.');
+ if(!Number.isFinite(closingBalance)||closingBalance<0)throw new Error('Saldo inválido.');
+ if(counted&&Object.entries(counted).some(([k,v])=>!['Cartão','Pix'].includes(k)||!Number.isFinite(v)||v<0))throw new Error('Conferência inválida.');
+ await withTransaction(async tx=>{
+ const session=await tx.cashRegisterSession.findFirst({where:{id:sessionId,storeId:user.storeId,status:'Aberto'}});if(!session)throw new Error('Este caixa já foi encerrado ou não pertence à loja.');
+ const values={'Dinheiro':closingBalance,...counted};
+ await tx.cashRegisterSession.update({where:{id:sessionId},data:{status:'Fechado',closingTime:new Date(),closingBalance,closingByPaymentMethod:values,closedByUid:user.uid,closedByName:user.name}});
+ await tx.auditLog.create({data:{storeId:user.storeId,userUid:user.uid,userName:user.name,action:'Fechamento de Caixa',details:JSON.stringify({sessionId,expected:{...(session.salesByPaymentMethod as object),Dinheiro:session.calculatedCashInDrawer},counted:values})}});
+ });
+ });
 }
-
-export async function correctCashClosingAction(sessionId: string, newClosingBalance: number, expectedStoreId?: string): Promise<void> {
-  return withAuthenticatedAction(async () => {
-  if (!expectedStoreId || expectedStoreId !== (await getAuthenticatedUser()).storeId) throw new Error('A loja ativa mudou. Atualize a página para continuar.');
-  const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
-  const session = await prisma.cashRegisterSession.findUnique({ where: { id: sessionId, storeId: user.storeId } });
-  if (!session) throw new Error("Sessão não encontrada");
-
-  const oldClosingBalance = session.closingBalance || 0;
-
-  await prisma.cashRegisterSession.update({
-    where: { id: sessionId, storeId: user.storeId },
-    data: {
-      closingBalance: newClosingBalance,
-      correction: {
-        date: new Date().toISOString(),
-        user: { uid: user.uid, name: user.name },
-        oldValue: oldClosingBalance,
-        newValue: newClosingBalance
-      }
-    }
-  });
-
-  await logAuditEvent('Correção de Saldo de Fechamento', `Saldo de fechamento corrigido de R$ ${oldClosingBalance.toFixed(2)} para R$ ${newClosingBalance.toFixed(2)} por ${user.name}`);
-
-  });
+export async function correctCashClosingAction(sessionId:string,newClosingBalance:number,expectedStoreId?:string,reason?:string):Promise<void>{
+ return withAuthenticatedAction(async()=>{
+ const user=await verifyUserRole(['Administrador','Gerente']);if(expectedStoreId!==user.storeId)throw new Error('A loja ativa mudou.');
+ if(!Number.isFinite(newClosingBalance)||newClosingBalance<0||!reason||reason.trim().length<5||reason.length>500)throw new Error('Informe valor válido e motivo com pelo menos 5 caracteres.');
+ await withTransaction(async tx=>{
+ const session=await tx.cashRegisterSession.findUnique({where:{id:sessionId,storeId:user.storeId}});if(!session||session.status!=='Fechado')throw new Error('Selecione um caixa encerrado.');
+ const correction={date:new Date().toISOString(),user:{uid:user.uid,name:user.name},oldValue:session.closingBalance??0,newValue:newClosingBalance,reason:reason.trim()};
+ const prior=session.correction as any;const history=prior?[...(prior.history??[]),{...prior,history:undefined}]:[];
+ await tx.cashRegisterSession.update({where:{id:sessionId},data:{closingBalance:newClosingBalance,closingByPaymentMethod:{...((session.closingByPaymentMethod as object)??{}),Dinheiro:newClosingBalance},correction:JSON.parse(JSON.stringify({...correction,history}))}});
+ await tx.auditLog.create({data:{storeId:user.storeId,userUid:user.uid,userName:user.name,action:'Correção de Saldo de Fechamento',details:JSON.stringify({sessionId,...correction})}});
+ });
+ });
 }
-
-export async function correctOpeningBalanceAction(sessionId: string, newOpeningBalance: number, expectedStoreId?: string): Promise<void> {
-  return withAuthenticatedAction(async () => {
-  if (!expectedStoreId || expectedStoreId !== (await getAuthenticatedUser()).storeId) throw new Error('A loja ativa mudou. Atualize a página para continuar.');
-  const user = await verifyUserRole(['Administrador', 'Gerente', 'Operador de Caixa']);
-  await withTransaction(async (tx) => {
-    const session = await tx.cashRegisterSession.findUnique({ where: { id: sessionId, storeId: user.storeId } });
-    if (!session) throw new Error("Sessão de caixa não encontrada.");
-
-    const difference = newOpeningBalance - session.openingBalance;
-
-    await tx.cashRegisterSession.update({
-      where: { id: sessionId, storeId: user.storeId },
-      data: {
-        openingBalance: newOpeningBalance,
-        calculatedCashInDrawer: { increment: difference },
-        openingCorrection: {
-          date: new Date().toISOString(),
-          user: { uid: user.uid, name: user.name },
-          oldValue: session.openingBalance,
-          newValue: newOpeningBalance
-        }
-      }
-    });
-
-    await logAuditEvent('Correção de Saldo de Abertura', `Saldo de abertura corrigido de R$ ${session.openingBalance.toFixed(2)} para R$ ${newOpeningBalance.toFixed(2)} por ${user.name}`);
-  });
-
-  });
+export async function correctOpeningBalanceAction(sessionId:string,newOpeningBalance:number,expectedStoreId?:string,reason?:string):Promise<void>{
+ return withAuthenticatedAction(async()=>{
+ const user=await verifyUserRole(['Administrador','Gerente']);if(expectedStoreId!==user.storeId)throw new Error('A loja ativa mudou.');
+ if(!Number.isFinite(newOpeningBalance)||newOpeningBalance<0||!reason||reason.trim().length<5||reason.length>500)throw new Error('Informe valor válido e motivo com pelo menos 5 caracteres.');
+ await withTransaction(async tx=>{
+ const session=await tx.cashRegisterSession.findUnique({where:{id:sessionId,storeId:user.storeId}});if(!session||session.status!=='Aberto')throw new Error('Selecione um caixa aberto.');
+ const correction={date:new Date().toISOString(),user:{uid:user.uid,name:user.name},oldValue:session.openingBalance,newValue:newOpeningBalance,reason:reason.trim()};
+ const prior=session.openingCorrection as any;const history=prior?[...(prior.history??[]),{...prior,history:undefined}]:[];
+ await tx.cashRegisterSession.update({where:{id:sessionId},data:{openingBalance:newOpeningBalance,calculatedCashInDrawer:{increment:newOpeningBalance-session.openingBalance},openingCorrection:JSON.parse(JSON.stringify({...correction,history}))}});
+ await tx.auditLog.create({data:{storeId:user.storeId,userUid:user.uid,userName:user.name,action:'Correção de Saldo de Abertura',details:JSON.stringify({sessionId,...correction})}});
+ });
+ });
 }
 
 export async function reopenCashRegisterAction(sessionId: string, expectedStoreId?: string): Promise<void> {
@@ -1010,7 +1007,7 @@ export async function reopenCashRegisterAction(sessionId: string, expectedStoreI
       closingBalance: null,
       closedByUid: null,
       closedByName: null,
-      correction: Prisma.DbNull,
+      // Preserve correction evidence across reopening.
     }
   });
 
@@ -1317,7 +1314,17 @@ export async function receivePurchaseOrderAction(
     const order = await tx.purchaseOrder.findUnique({ where: { id: orderId, storeId: user.storeId } });
     if (!order) throw new Error("Pedido de compra não encontrado.");
 
+    if(['Recebido','Cancelado'].includes(order.status))throw new Error('Este pedido não aceita novos recebimentos.');
+    if(!Array.isArray(receivedItems)||!receivedItems.length||receivedItems.length>500)throw new Error('Informe os itens recebidos.');
+    const seen=new Set<string>();const ordered=order.items as any[];
+    for(const item of receivedItems){
+      if(seen.has(item.productId))throw new Error('Há produtos duplicados no recebimento.');seen.add(item.productId);
+      if(!Number.isFinite(item.quantityReceived)||item.quantityReceived<0||!Number.isFinite(item.cost)||item.cost<0)throw new Error('Quantidade e custo devem ser números válidos e não negativos.');
+      const original=ordered.find(i=>i.productId===item.productId);
+      if(!original||item.quantityReceived>original.quantityOrdered-(original.quantityReceived??0))throw new Error('A quantidade recebida excede o saldo do pedido.');
+    }
     const validReceivedItems = receivedItems.filter(item => item.quantityReceived > 0);
+    if(!validReceivedItems.length)throw new Error('Informe pelo menos uma quantidade recebida.');
     const productIds = validReceivedItems.map(item => item.productId);
     const products = await tx.product.findMany({ where: { id: { in: productIds }, storeId: user.storeId } });
 
@@ -1367,7 +1374,7 @@ export async function receivePurchaseOrderAction(
     const updatedPOItems = currentItems.map(item => {
       const received = validReceivedItems.find(r => r.productId === item.productId);
       const quantityJustReceived = received ? received.quantityReceived : 0;
-      const newQuantityForThisItem = item.quantityReceived + quantityJustReceived;
+      const newQuantityForThisItem = (item.quantityReceived??0) + quantityJustReceived;
 
       totalQuantityOrdered += item.quantityOrdered;
       newTotalQuantityReceived += newQuantityForThisItem;

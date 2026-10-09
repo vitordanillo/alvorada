@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 
 interface UserManagementTableProps {
   users: User[];
-  onUpdateRole: (uid: string, role: User['role']) => Promise<void>;
+  onUpdateRole: (uid: string, role: User['role'], reason:string) => Promise<void>;
   onCreateUser: (name: string, email: string, password: string, role: User['role']) => Promise<void>;
 }
 
@@ -25,11 +25,14 @@ export function UserManagementTable({ users, onUpdateRole, onCreateUser }: UserM
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [role, setRole] = React.useState<User['role']>('Operador de Caixa');
+  const [reason,setReason]=React.useState(''),[updating,setUpdating]=React.useState(false);
   const [creating, setCreating] = React.useState(false);
 
   const handleRoleChange = async (uid: string, newRole: User['role']) => {
+    if(updating)return;setUpdating(true);
     try {
-      await onUpdateRole(uid, newRole);
+      if(reason.trim().length<5)throw new Error('Informe o motivo antes de alterar o cargo.');
+      await onUpdateRole(uid, newRole,reason);
       toast({
         title: "Função atualizada!",
         description: `A função do usuário foi alterada para ${newRole}.`
@@ -42,7 +45,7 @@ export function UserManagementTable({ users, onUpdateRole, onCreateUser }: UserM
         title: 'Erro!',
         description: errorMessage
       });
-    }
+    }finally{setUpdating(false);}
   };
 
   const roles: User['role'][] = ['Administrador', 'Gerente', 'Operador de Caixa', 'Estoquista'];
@@ -97,7 +100,7 @@ export function UserManagementTable({ users, onUpdateRole, onCreateUser }: UserM
             <Button type="submit" disabled={creating}>{creating ? 'Criando…' : 'Adicionar usuário'}</Button>
           </div>
         </form>
-        <Table>
+        <label className="mb-4 block">Motivo para alteração de cargo<Input value={reason} minLength={5} maxLength={500} onChange={e=>setReason(e.target.value)}/></label><Table>
           <TableHeader>
             <TableRow>
               <TableHead>Usuário</TableHead>
@@ -117,12 +120,12 @@ export function UserManagementTable({ users, onUpdateRole, onCreateUser }: UserM
                     <div className="font-medium">{user.name || user.email || 'Usuário'}</div>
                   </div>
                 </TableCell>
-                <TableCell>{user.email}</TableCell>
+                <TableCell>{user.email}<p className="text-xs text-muted-foreground">{user.disabled?"Conta bloqueada":"Conta habilitada"} · revisão de sessões {user.sessionVersion??0}{user.mustChangePassword?" · Senha temporária":""}</p></TableCell>
                 <TableCell>
                   <Select
-                    defaultValue={user.role}
+                    value={user.role}
                     onValueChange={(newRole: User['role']) => handleRoleChange(user.uid, newRole)}
-                    disabled={!user.uid || user.uid === currentUser?.uid}
+                    disabled={updating||!user.uid || user.uid === currentUser?.uid}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione uma permissão" />

@@ -33,7 +33,7 @@ export async function processSale(
       const product = products.find(p => p.id === item.productId);
       if (!product || product.status !== 'Ativo' || !Number.isFinite(item.quantity) || item.quantity <= 0 || product.stock < item.quantity) throw new Error('Produto indisponível ou estoque insuficiente.');
       if (Math.abs(item.price - product.price) > 0.001) throw new Error('O preço do produto mudou. Atualize o carrinho.');
-      return { productId: product.id, productName: product.name, quantity: item.quantity, price: product.price, costAtTimeOfSale: product.averageCost };
+      return { productId: product.id, productName: product.name, quantity: item.quantity, price: product.price, costAtTimeOfSale: product.averageCost,unit:product.unit,...(product.measurement?{measurement:product.measurement as unknown as {factor:number;baseUnit:'L'|'kg'|'un'}}:{}) };
     });
     const totalCents = Math.round(items.reduce((sum, item) => sum + item.quantity * item.price, 0) * 100);
     const total = totalCents / 100;

@@ -101,9 +101,10 @@ export async function updateStoreDetailsAction(input: z.input<typeof storeDetail
   });
 }
 
-export async function grantStoreAccessAction(storeId: string, email: string, role: string): Promise<void> {
+export async function grantStoreAccessAction(storeId: string, email: string, role: string,reason?:string): Promise<void> {
   return withAuthenticatedAction(async()=>{
     z.string().uuid().parse(storeId);
+    const justification=z.string().trim().min(5).max(500).parse(reason);
     const normalized=z.string().trim().toLowerCase().email().parse(email);
     if(!['Administrador','Gerente','Operador de Caixa','Estoquista'].includes(role)) throw new Error('Cargo inválido.');
     await withTransaction(async tx=>{
@@ -115,7 +116,7 @@ export async function grantStoreAccessAction(storeId: string, email: string, rol
       if(previous?.role==='Administrador' && role!=='Administrador' && await tx.storeMembership.count({where:{storeId,role:'Administrador',user:{disabled:false}}})<=1) throw new Error('Vincule outro administrador ativo antes de alterar este cargo.');
       await ensureUserCapacity(storeId,user.uid);
       await tx.storeMembership.upsert({where:{userId_storeId:{userId:user.uid,storeId}},create:{userId:user.uid,storeId,role},update:{role}});
-      await audit('Vincular usuário',`${normalized} vinculado com cargo ${role}.`,storeId);
+      await audit('Vincular usuário',`${normalized} vinculado com cargo ${role}. Motivo: ${justification}`,storeId);
     });
   },'platform');
 }

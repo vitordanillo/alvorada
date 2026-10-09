@@ -1,6 +1,11 @@
 'use client';
 
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import {dataPlan} from '@/lib/data-plan';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { newRequestId } from '@/lib/request-id';
+import type { OfflineSale } from '@/lib/offline-db';
+import { OfflineSyncPanel } from '@/components/layout/offline-sync-panel';
 import type { Product, Customer, Sale, Supplier, User, CashRegisterSession, CashTransaction, StockAdjustmentLog, SystemSettings, StockEntryLog, ProductChangeLog, AccountsPayable, PurchaseOrder } from '@/lib/types';
 import type { ProductFormData } from '@/components/products/product-form';
 import {
@@ -18,6 +23,7 @@ import {
   deleteCustomerAction,
   addCreditPaymentAction,
   addSaleAction,
+  submitSaleAction,
   cancelSaleAction,
   openCashRegisterAction,
   closeCashRegisterAction,
@@ -87,16 +93,16 @@ interface AppContextType {
   addSale: (sale: Omit<Sale, 'id' | 'date' | 'status'>) => Promise<Sale>;
   cancelSale: (saleId: string, reason: string, passwordAttempt: string) => Promise<void>;
   openCashRegister: (openingBalance: number) => Promise<void>;
-  closeCashRegister: (closingBalance: number) => Promise<void>;
-  correctCashClosing: (sessionId: string, newClosingBalance: number) => Promise<void>;
-  correctOpeningBalance: (newOpeningBalance: number) => Promise<void>;
+  closeCashRegister: (closingBalance: number, counted?:Record<string,number>) => Promise<void>;
+  correctCashClosing: (sessionId: string, newClosingBalance: number, reason:string) => Promise<void>;
+  correctOpeningBalance: (newOpeningBalance: number, reason:string) => Promise<void>;
   reopenCashRegister: (sessionId: string) => Promise<void>;
   cancelCashRegisterOpening: (sessionId: string) => Promise<void>;
   addCashTransaction: (transaction: Omit<CashTransaction, 'id' | 'date' | 'sessionId' | 'registeredBy'>) => Promise<void>;
   addSupplier: (supplier: Omit<Supplier, 'id'>) => Promise<void>;
   updateSupplier: (supplier: Supplier) => Promise<void>;
   deleteSupplier: (supplierId: string) => Promise<void>;
-  updateUserRole: (uid: string, role: User['role']) => Promise<void>;
+  updateUserRole: (uid: string, role: User['role'], reason:string) => Promise<void>;
   createUser: (name: string, email: string, password: string, role: User['role']) => Promise<void>;
   updateCancellationPassword: (newPassword: string) => Promise<void>;
   addPayable: (payable: Omit<AccountsPayable, 'id' | 'status' | 'registeredBy' | 'paymentDate' | 'dateCreated'>) => Promise<void>;
@@ -110,12 +116,21 @@ interface AppContextType {
   logout: () => Promise<void>;
   reloadUser: () => Promise<void>;
   dataError: string;
+  dataPage:{main:string;page:number;pageSize:number;total:number;catalogLimited:boolean};
+  syncOfflineSales: () => Promise<void>;
+  retryData: () => Promise<void>;
+  offlineSync: {items:OfflineSale[];syncing:boolean;lastSync:string;error:string};
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
+  const pathname=usePathname(),searchParams=useSearchParams();
+  const [dataPage,setDataPage]=useState({main:'',page:1,pageSize:50,total:0,catalogLimited:false});
   const [dataError,setDataError]=useState('');
+  const [offlineSync,setOfflineSync]=useState({items:[] as OfflineSale[],syncing:false,lastSync:'',error:''});
+  const syncLock=React.useRef(false);
+  const scopeRef=React.useRef('');
   const requestVersion=React.useRef(0);
   const [user, setUser] = useState<User | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
@@ -150,15 +165,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   });
 
   const cacheScope=user?.storeId ? `${user.uid}:${user.storeId}` : '';
+  scopeRef.current=cacheScope;
   const activeSession = cashSessions.find(s => s.status === 'Aberto') || null;
 
   const refreshData = async () => {
-    if (!user?.storeId) return;
+    if (!user?.storeId||user.mustChangePassword) return;
     const version=++requestVersion.current;
     setDataError('');
     try {
-      const data = await getInitialDataAction(user?.storeId);
+      const data = await getInitialDataAction(user?.storeId,pathname,Number(searchParams.get('page')??1),searchParams.get('search')??'',searchParams.get('from')??'',searchParams.get('to')??'');
       if(version!==requestVersion.current) return;
+      setDataPage(data.meta);
       setProducts(data.products);
       setCustomers(data.customers);
       setSales(data.sales);
@@ -172,20 +189,21 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setAccountsPayable(data.accountsPayable);
       setPurchaseOrders(data.purchaseOrders);
 
-      // Save to IndexedDB local cache for offline usage
+      const needed=dataPlan(pathname).needed;
+      // Save only complete operating catalogs, never replace them with a paginated list.
       import('@/lib/offline-db').then((db) => {
-        db.saveToCache(cacheScope, 'products', data.products);
-        db.saveToCache(cacheScope, 'customers', data.customers);
-        db.saveToCache(cacheScope, 'sales', data.sales);
-        db.saveToCache(cacheScope, 'suppliers', data.suppliers);
-        db.saveToCache(cacheScope, 'cashSessions', data.cashSessions);
-        db.saveToCache(cacheScope, 'stockAdjustmentLogs', data.stockAdjustmentLogs);
-        db.saveToCache(cacheScope, 'allUsers', data.allUsers);
-        db.saveToCache(cacheScope, 'systemSettings', data.systemSettings);
-        db.saveToCache(cacheScope, 'stockEntryLogs', data.stockEntryLogs);
-        db.saveToCache(cacheScope, 'productChangeLogs', data.productChangeLogs);
-        db.saveToCache(cacheScope, 'accountsPayable', data.accountsPayable);
-        db.saveToCache(cacheScope, 'purchaseOrders', data.purchaseOrders);
+        if(needed.has('products')&&data.meta.main!=='products')void db.saveToCache(cacheScope, 'products', data.products);
+        if(needed.has('customers')&&data.meta.main!=='customers')void db.saveToCache(cacheScope, 'customers', data.customers);
+        if(needed.has('sales')&&data.meta.main!=='sales')void db.saveToCache(cacheScope, 'sales', data.sales);
+        if(needed.has('suppliers')&&data.meta.main!=='suppliers')void db.saveToCache(cacheScope, 'suppliers', data.suppliers);
+        if(needed.has('cashSessions')&&data.meta.main!=='cashSessions')void db.saveToCache(cacheScope, 'cashSessions', data.cashSessions);
+        if(needed.has('stockAdjustmentLogs')&&data.meta.main!=='stockAdjustmentLogs')void db.saveToCache(cacheScope, 'stockAdjustmentLogs', data.stockAdjustmentLogs);
+        if(needed.has('allUsers')&&data.meta.main!=='allUsers')void db.saveToCache(cacheScope, 'allUsers', data.allUsers);
+        if(needed.has('systemSettings')&&data.meta.main!=='systemSettings')void db.saveToCache(cacheScope, 'systemSettings', data.systemSettings);
+        if(needed.has('stockEntryLogs')&&data.meta.main!=='stockEntryLogs')void db.saveToCache(cacheScope, 'stockEntryLogs', data.stockEntryLogs);
+        if(needed.has('productChangeLogs')&&data.meta.main!=='productChangeLogs')void db.saveToCache(cacheScope, 'productChangeLogs', data.productChangeLogs);
+        if(needed.has('accountsPayable')&&data.meta.main!=='accountsPayable')void db.saveToCache(cacheScope, 'accountsPayable', data.accountsPayable);
+        if(needed.has('purchaseOrders')&&data.meta.main!=='purchaseOrders')void db.saveToCache(cacheScope, 'purchaseOrders', data.purchaseOrders);
       }).catch(err => console.error("Cache import error:", err));
 
       setLoading(prev => ({
@@ -206,7 +224,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       if(version!==requestVersion.current) return;
       if(typeof window==='undefined' || navigator.onLine) {
-        setDataError(error instanceof Error ? error.message : 'Falha ao carregar os dados. Atualize a página.');
+        setDataError('Não foi possível carregar os dados desta loja. Tente novamente.');
+        setLoading(prev=>Object.fromEntries(Object.keys(prev).map(key=>[key,false])) as typeof prev);
         return;
       }
       console.warn('Conexão indisponível; carregando o cache desta loja.');
@@ -264,37 +283,29 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // Synchronize offline sales queue
   const syncOfflineSales = async () => {
-    if(!user?.storeId) return;
-    try {
-      const db = await import('@/lib/offline-db');
+    if(!user?.storeId || syncLock.current)return;
+    const scope=cacheScope,storeId=user.storeId;syncLock.current=true;
+    setOfflineSync(prev=>({...prev,syncing:true,error:''}));
+    try{
+      const db=await import('@/lib/offline-db');
       const legacy=await db.getLegacyQueuedSales();
-      if(legacy.length) {
-        const owned=await getLegacyOfflineSessionsAction([...new Set(legacy.map(s=>s.activeSessionId))],user.storeId);
-        await db.recoverLegacySales(cacheScope,legacy.filter(s=>owned.includes(s.activeSessionId)));
+      if(legacy.length){const owned=await getLegacyOfflineSessionsAction([...new Set(legacy.map(s=>s.activeSessionId))],storeId);await db.recoverLegacySales(scope,legacy.filter(s=>owned.includes(s.activeSessionId)));}
+      const queued=await db.getQueuedSales(scope);let accepted=0;
+      for(const item of queued){
+        if(scopeRef.current!==scope || !navigator.onLine)break;
+        const canonical={...item,saleData:{...item.saleData,clientRequestId:item.saleData.clientRequestId??item.id}};
+        await db.queueOfflineSale(scope,canonical);
+        try{
+          const result=await submitSaleAction(canonical.saleData,canonical.activeSessionId,storeId);
+          if(!result.ok)throw new Error(result.error);
+          await db.removeQueuedSale(scope,item.id);accepted++;
+        }catch(error){await db.queueOfflineSale(scope,{...canonical,attempts:(item.attempts??0)+1,lastError:error instanceof Error?error.message:'Não foi possível confirmar.'});}
       }
-      const queued = await db.getQueuedSales(cacheScope);
-      if (queued.length === 0) return;
-
-      console.log(`Syncing ${queued.length} offline sales...`);
-      let successCount = 0;
-
-      for (const item of queued) {
-        try {
-          await addSaleAction(item.saleData, item.activeSessionId, user?.storeId);
-          await db.removeQueuedSale(cacheScope, item.id);
-          successCount++;
-        } catch (err) {
-          console.error(`Failed to sync queued sale ${item.id}:`, err);
-        }
-      }
-
-      if (successCount > 0) {
-        await refreshData();
-        console.log(`Successfully synced ${successCount} offline sales!`);
-      }
-    } catch (err) {
-      console.error("Failed to sync offline sales queue:", err);
-    }
+      const items=await db.getQueuedSales(scope);const lastSync=new Date().toISOString();
+      await db.saveToCache(scope,'lastSync',lastSync);
+      if(scopeRef.current===scope){setOfflineSync({items,syncing:false,lastSync,error:''});if(accepted)await refreshData();}
+    }catch(error){if(scopeRef.current===scope)setOfflineSync(prev=>({...prev,error:'Falha na sincronização. As pendências foram preservadas.',syncing:false}));}
+    finally{syncLock.current=false;if(scopeRef.current===scope)setOfflineSync(prev=>({...prev,syncing:false}));}
   };
 
   // On mount: Check auth session and sync offline sales
@@ -312,6 +323,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       });
   }, []);
 
+  useEffect(()=>{
+    setOfflineSync({items:[],syncing:false,lastSync:'',error:''});
+    if(!cacheScope)return;
+    let cancelled=false;
+    import('@/lib/offline-db').then(async db=>{
+      const [items,lastSync]=await Promise.all([db.getQueuedSales(cacheScope),db.getFromCache<string>(cacheScope,'lastSync')]);
+      if(!cancelled)setOfflineSync(prev=>({...prev,items,lastSync:lastSync??''}));
+    }).catch(()=>{if(!cancelled)setOfflineSync(prev=>({...prev,error:'Não foi possível ler a fila local. Verifique o armazenamento do navegador.'}));});
+    return()=>{cancelled=true;};
+  },[cacheScope]);
+
   // Sync listener when online
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -327,7 +349,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // On user change: Load or clear database listings
   useEffect(() => {
-    if (user?.storeId) {
+    if (user?.storeId && !user.mustChangePassword) {
+      setLoading(prev=>Object.fromEntries(Object.keys(prev).map(key=>[key,true])) as typeof prev);
       refreshData();
     } else {
       requestVersion.current++;
@@ -351,7 +374,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         systemSettings: true, accountsPayable: true, purchaseOrders: true,
       });
     }
-  }, [user]);
+  }, [user,pathname,searchParams]);
 
   // Load transactions for the active register session
   useEffect(() => {
@@ -427,86 +450,26 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return transaction;
   };
 
-  const addSale = async (saleData: Omit<Sale, 'id' | 'date' | 'status'>): Promise<Sale> => {
-    if (!activeSession) throw new Error("Não há um caixa aberto. Impossível registrar a venda.");
-
-    try {
-      const sale = await addSaleAction(saleData, activeSession.id, user?.storeId);
-      await refreshData();
-
-      // Refresh cash transactions list
-      const trans = await getCashTransactionsAction(activeSession.id, user?.storeId);
-      setCashTransactions(trans);
-
-      return sale;
-    } catch (error) {
-      console.warn("Failed to send sale to server, checking offline fallback...", error);
-      if (typeof window !== 'undefined' && !navigator.onLine) {
-        const db = await import('@/lib/offline-db');
-        const tempId = `off-${Math.random().toString(36).substr(2, 9)}`;
-        const localSale: Sale = {
-          id: tempId,
-          date: new Date().toISOString(),
-          items: saleData.items,
-          total: saleData.total,
-          customerId: saleData.customerId,
-          customerName: saleData.customerName,
-          paymentMethods: saleData.paymentMethods,
-          status: 'Concluída',
-          cashRegisterSessionId: activeSession.id,
-        };
-
-        // Save queued sale
-        await db.queueOfflineSale(cacheScope, {
-          id: tempId,
-          saleData,
-          activeSessionId: activeSession.id,
-          createdAt: new Date().toISOString(),
-        });
-
-        // Optimistically deduct stock locally
-        setProducts(prevProducts => {
-          const updated = prevProducts.map(p => {
-            const item = saleData.items.find(i => i.productId === p.id);
-            if (item) {
-              return { ...p, stock: Math.max(0, p.stock - item.quantity) };
-            }
-            return p;
-          });
-          db.saveToCache(cacheScope, 'products', updated);
-          return updated;
-        });
-
-        // Update local customer points/balance
-        if (saleData.customerId !== 'default') {
-          setCustomers(prevCustomers => {
-            const updated = prevCustomers.map(c => {
-              if (c.id === saleData.customerId) {
-                let fiadoAmount = 0;
-                let pointsUsed = 0;
-                for (const pm of saleData.paymentMethods) {
-                  if (pm.method === 'Fiado') fiadoAmount += pm.amount;
-                  if (pm.method === 'Pontos') pointsUsed += pm.amount * 10;
-                }
-                const newBalance = c.balance + fiadoAmount;
-                const pointsEarned = Math.floor((saleData.total - pointsUsed / 10) * 0.1);
-                const newPoints = Math.max(0, (c.loyaltyPoints || 0) - pointsUsed + Math.max(0, pointsEarned));
-                return { ...c, balance: newBalance, loyaltyPoints: newPoints };
-              }
-              return c;
-            });
-            db.saveToCache(cacheScope, 'customers', updated);
-            return updated;
-          });
-        }
-
-        // Add to sales state list
-        setSales(prevSales => [localSale, ...prevSales]);
-
-        return localSale;
-      }
-      throw error;
+  const addSale = async (input: Omit<Sale, 'id' | 'date' | 'status'>):Promise<Sale> => {
+    if(!activeSession || !user?.storeId)throw new Error('Abra o caixa antes de registrar a venda.');
+    const saleData={...input,clientRequestId:input.clientRequestId??newRequestId()};
+    const db=await import('@/lib/offline-db');const id=saleData.clientRequestId;
+    const item={id,saleData,activeSessionId:activeSession.id,createdAt:new Date().toISOString()};
+    await db.queueOfflineSale(cacheScope,item);
+    let pendingError='Aguardando conexão.';
+    if(navigator.onLine){
+      let result:Awaited<ReturnType<typeof submitSaleAction>>|undefined;
+      try{result=await submitSaleAction(saleData,activeSession.id,user.storeId);}catch{pendingError='Confirmação indisponível; reenvio protegido contra duplicidade.';}
+      if(result?.ok){try{await db.removeQueuedSale(cacheScope,id);}catch{setOfflineSync(prev=>({...prev,error:'Venda confirmada. A limpeza local será repetida sem duplicar a venda.'}));}if(scopeRef.current===cacheScope){void refreshData();setOfflineSync(prev=>({...prev,items:prev.items.filter(i=>i.id!==id)}));}return result.sale;}
+      if(result && !result.ok){if(result.confirmedRejected){await db.removeQueuedSale(cacheScope,id);throw new Error(result.error);}pendingError=result.error;}
     }
+    try{await db.queueOfflineSale(cacheScope,{...item,lastError:pendingError});}catch{pendingError+=' Não foi possível atualizar o aviso local; o identificador original permanece na fila.';}
+    if(scopeRef.current!==cacheScope)return {...saleData,id:'off-'+id,date:item.createdAt,status:'Pendente',cashRegisterSessionId:item.activeSessionId};
+    setOfflineSync(prev=>({...prev,items:[...prev.items.filter(i=>i.id!==id),{...item,lastError:pendingError}]}));
+    const localSale:Sale={...saleData,id:'off-'+id,date:item.createdAt,status:'Pendente',cashRegisterSessionId:activeSession.id,storeSnapshot:user.store};
+    setSales(prev=>[localSale,...prev]);
+    setProducts(prev=>{const updated=prev.map(p=>({...p,stock:Math.max(0,p.stock-(saleData.items.find(i=>i.productId===p.id)?.quantity??0))}));void db.saveToCache(cacheScope,'products',updated);return updated;});
+    return localSale;
   };
 
   const cancelSale = async (saleId: string, reason: string, passwordAttempt: string) => {
@@ -524,20 +487,20 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     await refreshData();
   };
 
-  const closeCashRegister = async (closingBalance: number) => {
+  const closeCashRegister = async (closingBalance: number, counted?:Record<string,number>) => {
     if (!activeSession) throw new Error("Nenhum caixa aberto para fechar.");
-    await closeCashRegisterAction(activeSession.id, closingBalance, user?.storeId);
+    await closeCashRegisterAction(activeSession.id, closingBalance, user?.storeId, counted);
     await refreshData();
   };
 
-  const correctCashClosing = async (sessionId: string, newClosingBalance: number) => {
-    await correctCashClosingAction(sessionId, newClosingBalance, user?.storeId);
+  const correctCashClosing = async (sessionId: string, newClosingBalance: number, reason:string) => {
+    await correctCashClosingAction(sessionId, newClosingBalance, user?.storeId, reason);
     await refreshData();
   };
 
-  const correctOpeningBalance = async (newOpeningBalance: number) => {
+  const correctOpeningBalance = async (newOpeningBalance: number, reason:string) => {
     if (!activeSession) throw new Error("Não há caixa ativo para corrigir.");
-    await correctOpeningBalanceAction(activeSession.id, newOpeningBalance, user?.storeId);
+    await correctOpeningBalanceAction(activeSession.id, newOpeningBalance, user?.storeId, reason);
     await refreshData();
   };
 
@@ -575,8 +538,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     await refreshData();
   };
 
-  const updateUserRole = async (uid: string, role: User['role']) => {
-    await updateUserRoleAction(uid, role, user?.storeId);
+  const updateUserRole = async (uid: string, role: User['role'], reason:string) => {
+    await updateUserRoleAction(uid, role, user?.storeId, reason);
     await refreshData();
   };
 
@@ -654,9 +617,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       closeCashRegister, correctCashClosing, correctOpeningBalance, reopenCashRegister, cancelCashRegisterOpening,
       addCashTransaction, addSupplier, updateSupplier, deleteSupplier, updateUserRole, createUser, updateCancellationPassword,
       addPayable, updatePayable, deletePayable, markPayableAsPaid, addPurchaseOrder, updatePurchaseOrder,
-      receivePurchaseOrder, login, logout, reloadUser, dataError
+      receivePurchaseOrder, login, logout, reloadUser, dataError, dataPage, syncOfflineSales, offlineSync, retryData:refreshData
     }}>
       {children}
+      {user?.storeId && <OfflineSyncPanel />}
     </AppContext.Provider>
   );
 };

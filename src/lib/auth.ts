@@ -55,7 +55,7 @@ export async function resolveUser(uid: string, requestedStoreId?: string): Promi
       if (store?.status==='Ativa') selected={...mapStore(store),role:'Administrador'};
     }
     return {uid:record.uid,name:record.name,email:record.email,avatarUrl:record.avatarUrl ?? undefined,
-      role:selected?.role ?? 'Administrador',storeId:selected?.id,store:selected,isPlatformAdmin:record.isPlatformAdmin,stores};
+      role:selected?.role ?? 'Administrador',storeId:selected?.id,store:selected,isPlatformAdmin:record.isPlatformAdmin,mustChangePassword:record.mustChangePassword,stores};
   });
 }
 
@@ -74,12 +74,14 @@ export async function currentUser(): Promise<User | null> {
 export async function withAuthenticatedAction<T>(operation: () => Promise<T>, scope: 'store'|'platform'|'identity'='store'): Promise<T> {
   const cached=currentDbUser();
   if (cached) {
+    if(scope!=='identity'&&cached.mustChangePassword)throw new Error('Troque sua senha temporária no Perfil antes de continuar.');
     if (scope==='platform' && !cached.isPlatformAdmin) throw new Error('Acesso restrito à administração da Firma Conecta.');
     if (scope==='store' && !cached.storeId) throw new Error('Selecione uma loja ativa para continuar.');
     return operation();
   }
   const user=await currentUser();
   if (!user) throw new Error('Usuário não autenticado.');
+  if(scope!=='identity'&&user.mustChangePassword)throw new Error('Troque sua senha temporária no Perfil antes de continuar.');
   if (scope==='platform' && !user.isPlatformAdmin) throw new Error('Acesso restrito à administração da Firma Conecta.');
   if (scope==='store' && !user.storeId) throw new Error('Selecione uma loja ativa para continuar.');
   return withDbContext({uid:user.uid,email:'',storeId:scope==='platform' ? '' : user.storeId,platformAdmin:scope==='platform' && user.isPlatformAdmin,user},operation);

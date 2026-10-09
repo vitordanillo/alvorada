@@ -61,6 +61,7 @@ export function ProfilePanel({initialProfile}:{initialProfile:Profile}){
     <div className="mx-auto max-w-5xl space-y-6">
       <Link href={back} className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-950"><ArrowLeft size={16}/> {profile.isPlatformAdmin?'Voltar à administração':'Voltar à loja'}</Link>
       <header className="flex items-center gap-4"><div className="rounded-2xl bg-blue-950 p-3 text-white"><UserRound size={26}/></div><div><h1 className="text-3xl font-semibold tracking-tight">Meu perfil</h1><p className="text-sm text-muted-foreground">Seus dados pessoais, acessos e segurança.</p></div></header>
+      {user?.mustChangePassword&&<p role="alert" className="rounded border border-amber-500 p-4">Sua senha é temporária. Troque-a abaixo para liberar a operação.</p>}
       {message && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">{message}</p>}
       {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-900">{error}</p>}
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">

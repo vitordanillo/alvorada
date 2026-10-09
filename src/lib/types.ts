@@ -27,6 +27,7 @@ export type Product = {
   stock: number;
   minStock: number;
   unit: string;
+  measurement?:import('./measure-units').Measurement;
   supplier: string;
   barcode?: string;
   imageUrl?: string;
@@ -44,6 +45,8 @@ export type Sale = {
     quantity: number;
     price: number;
     costAtTimeOfSale?: number;
+    measurement?:import('./measure-units').Measurement;
+    unit?:string;
   }[];
   total: number;
   totalCost?: number;
@@ -55,7 +58,7 @@ export type Sale = {
     amount: number;
   }>;
   cashRegisterSessionId?: string;
-  status: 'Concluída' | 'Cancelada';
+  status: 'Concluída' | 'Cancelada' | 'Pendente';
   cancellationReason?: string;
   cancelledBy?: {
     uid: string;
@@ -107,6 +110,9 @@ export type User = {
   store?: Store;
   stores?: StoreMembership[];
   isPlatformAdmin?: boolean;
+  mustChangePassword?:boolean;
+  disabled?:boolean;
+  sessionVersion?:number;
 };
 
 export type SystemSettings = {
@@ -157,13 +163,18 @@ export type CashRegisterSession = {
     uid: string;
     name: string;
   } | null;
+  closingByPaymentMethod?:Record<string,number>;
   correction?: {
     date: string; // ISO
     user: { uid: string; name: string; };
+    reason?: string;
+    history?: {date:string;oldValue:number;newValue:number;reason?:string;user:{uid:string;name:string}}[];
     oldValue: number;
     newValue: number;
   },
   openingCorrection?: {
+    reason?: string;
+    history?: {date:string;oldValue:number;newValue:number;reason?:string;user:{uid:string;name:string}}[];
     date: string; // ISO
     user: { uid: string; name: string; };
     oldValue: number;

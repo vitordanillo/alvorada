@@ -1,6 +1,7 @@
 
 'use client';
 
+import {CashEvidence} from '@/components/cash-register/cash-evidence';
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -45,21 +46,25 @@ const openSchema = z.object({
 });
 
 const closeSchema = z.object({
+  cardCount:z.coerce.number().min(0),
+  pixCount:z.coerce.number().min(0),
   closingBalance: z.coerce.number().min(0, 'O valor final deve ser positivo.'),
 });
 
 const correctionSchema = z.object({
+  reason:z.string().trim().min(5),
   newClosingBalance: z.coerce.number().min(0, 'O valor deve ser positivo.'),
 });
 
 const openCorrectionSchema = z.object({
+  reason:z.string().trim().min(5),
   newOpeningBalance: z.coerce.number().min(0, 'O valor inicial deve ser positivo.'),
 });
 
 
 export default function CashRegisterPage() {
   const { 
-    activeSession, 
+    user, activeSession, 
     cashSessions,
     cashTransactions,
     loading, 
@@ -104,17 +109,17 @@ export default function CashRegisterPage() {
 
   const closeForm = useForm({
     resolver: zodResolver(closeSchema),
-    defaultValues: { closingBalance: 0 },
+    defaultValues: { closingBalance: 0,cardCount:0,pixCount:0 },
   });
 
   const correctionForm = useForm({
     resolver: zodResolver(correctionSchema),
-    defaultValues: { newClosingBalance: 0 },
+    defaultValues: { newClosingBalance: 0,reason:'' },
   });
 
   const openCorrectionForm = useForm({
     resolver: zodResolver(openCorrectionSchema),
-    defaultValues: { newOpeningBalance: 0 },
+    defaultValues: { newOpeningBalance: 0,reason:'' },
   });
 
 
@@ -153,7 +158,7 @@ export default function CashRegisterPage() {
   const handleCloseRegister = async (data: z.infer<typeof closeSchema>) => {
     setIsClosing(true);
     try {
-      await closeCashRegister(data.closingBalance);
+      await closeCashRegister(data.closingBalance,{Cartão:data.cardCount,Pix:data.pixCount});
       toast({ title: "Sucesso!", description: "Caixa fechado com sucesso." });
       closeForm.reset();
       setIsCloseDialogOpen(false);
@@ -169,7 +174,7 @@ export default function CashRegisterPage() {
     if (!activeSession) return;
     setIsSubmittingOpenCorrection(true);
     try {
-        await correctOpeningBalance(data.newOpeningBalance);
+        await correctOpeningBalance(data.newOpeningBalance,data.reason);
         toast({ title: "Sucesso!", description: "Valor de abertura corrigido." });
         setIsCorrectionOpenDialogOpen(false);
     } catch (error) {
@@ -190,7 +195,7 @@ export default function CashRegisterPage() {
       if (!sessionToCorrect) return;
       setIsSubmittingCorrection(true);
       try {
-          await correctCashClosing(sessionToCorrect.id, data.newClosingBalance);
+          await correctCashClosing(sessionToCorrect.id, data.newClosingBalance,data.reason);
           toast({ title: "Sucesso!", description: "Fechamento de caixa corrigido." });
           setIsCorrectionDialogOpen(false);
           setSessionToCorrect(null);
@@ -389,7 +394,7 @@ export default function CashRegisterPage() {
                                   Realize a contagem do dinheiro na gaveta e insira o valor total para fechar o caixa.
                               </DialogDescription>
                           </DialogHeader>
-                          <form onSubmit={closeForm.handleSubmit(handleCloseRegister)} className="space-y-4">
+                          <form onSubmit={closeForm.handleSubmit(handleCloseRegister)} className="space-y-4"><label className="block">Cartão informado (R$)<Input type="number" min="0" step="0.01" {...closeForm.register("cardCount")}/></label><label className="block">Pix informado (R$)<Input type="number" min="0" step="0.01" {...closeForm.register("pixCount")}/></label><p className="text-sm">Cartão esperado: R$ {(activeSession?.salesByPaymentMethod?.["Cartão"]??0).toFixed(2)} · diferença R$ {(Number(closeForm.watch("cardCount"))-(activeSession?.salesByPaymentMethod?.["Cartão"]??0)).toFixed(2)}. Pix esperado: R$ {(activeSession?.salesByPaymentMethod?.Pix??0).toFixed(2)} · diferença R$ {(Number(closeForm.watch("pixCount"))-(activeSession?.salesByPaymentMethod?.Pix??0)).toFixed(2)}.</p>
                                <div className="space-y-3 rounded-md border bg-muted/50 p-4">
                                   <div className="flex justify-between font-medium">
                                       <span className="text-muted-foreground">Valor Esperado (Sistema):</span>
@@ -446,7 +451,7 @@ export default function CashRegisterPage() {
                           return (
                             <div key={tx.id} className="flex items-center">
                                 <div>
-                                    <p className="font-medium">{tx.description}</p>
+                                    <p className="font-medium">{tx.description}</p>{tx.customerId&&<a className="text-xs underline" href={'/dashboard/customers/'+tx.customerId}>Extrato do cliente</a>}{tx.description.match(/Pagamento de conta #([a-f0-9-]{36})/)&&<a className="text-xs underline" href={'/dashboard/accounts-payable?search='+tx.description.match(/Pagamento de conta #([a-f0-9-]{36})/)?.[1]}>Conta vinculada</a>}
                                     <p className="text-sm text-muted-foreground">
                                         {tx.type} por {tx.registeredBy.name} em {format(new Date(tx.date), "dd/MM 'às' HH:mm", { locale: ptBR })}
                                     </p>
@@ -536,7 +541,7 @@ export default function CashRegisterPage() {
                                         )}
                                     </div>
                                     <div className="flex gap-2">
-                                      <Button variant="outline" size="sm" onClick={() => handleOpenCorrectionDialog(session)}>
+                                      <Button disabled={!['Administrador','Gerente'].includes(user?.role??'')} variant="outline" size="sm" onClick={() => handleOpenCorrectionDialog(session)}>
                                         <Edit className="mr-2 h-3 w-3" /> Corrigir
                                       </Button>
                                       <Button variant="outline" size="sm" onClick={() => handleOpenReopenDialog(session)} disabled={!!activeSession}>
@@ -544,7 +549,7 @@ export default function CashRegisterPage() {
                                       </Button>
                                     </div>
                                </div>
-                               <Separator />
+                               <CashEvidence session={session}/><Separator />
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                                   <p><strong>Valor Esperado:</strong> R$ {session.calculatedCashInDrawer.toFixed(2).replace('.', ',')}</p>
                                   <p><strong>Valor Fechado:</strong> R$ {(session.closingBalance ?? 0).toFixed(2).replace('.', ',')}</p>
@@ -601,7 +606,7 @@ export default function CashRegisterPage() {
                 </DialogDescription>
             </DialogHeader>
             {activeSession && (
-              <form onSubmit={openCorrectionForm.handleSubmit(handleCorrectOpening)} className="space-y-4">
+              <form onSubmit={openCorrectionForm.handleSubmit(handleCorrectOpening)} className="space-y-4"><label className="block">Motivo da correção<Input minLength={5} maxLength={500} required {...openCorrectionForm.register("reason")}/></label>
                     <div className="space-y-3 rounded-md border bg-muted/50 p-4">
                         <div className="flex justify-between font-medium">
                             <span className="text-muted-foreground">Valor de Abertura Atual:</span>
@@ -640,7 +645,7 @@ export default function CashRegisterPage() {
                 </DialogDescription>
             </DialogHeader>
             {sessionToCorrect && (
-              <form onSubmit={correctionForm.handleSubmit(handleCorrectClosing)} className="space-y-4">
+              <form onSubmit={correctionForm.handleSubmit(handleCorrectClosing)} className="space-y-4"><label className="block">Motivo da correção<Input minLength={5} maxLength={500} required {...correctionForm.register("reason")}/></label>
                     <div className="space-y-3 rounded-md border bg-muted/50 p-4">
                         <div className="flex justify-between font-medium">
                             <span className="text-muted-foreground">Valor Esperado (Sistema):</span>

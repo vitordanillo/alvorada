@@ -16,7 +16,7 @@ async function audit(action:string,details:string,targetStoreId?:string) {
 }
 const serialize=<T>(value:T):T=>JSON.parse(JSON.stringify(value));
 
-export async function getAdminDataAction(section='overview',query='',page=1) {
+export async function getAdminDataAction(section='overview',query='',page=1, filters:{status?:string;storeId?:string;from?:string;to?:string}={}) {
   return withAuthenticatedAction(async()=>{
     const q=z.string().max(150).parse(query).trim(), skip=(z.number().int().min(1).max(100000).parse(page)-1)*20;
     z.enum(['overview','stores','users','plans','subscriptions','invoices','audit']).parse(section);
@@ -36,7 +36,7 @@ export async function getAdminDataAction(section='overview',query='',page=1) {
       [records,total]=await Promise.all([prisma.store.findMany({where,skip,take:20,orderBy:{createdAt:'desc'},include:{organization:true,subscription:{include:{plan:true}},memberships:{where:{role:'Administrador'},include:{user:{select:{name:true,email:true}}}},_count:{select:{memberships:true}}}}),prisma.store.count({where})]);
     } else if(section==='users') {
       const where=q?{OR:[{name:{contains:q,mode:'insensitive' as const}},{email:{contains:q,mode:'insensitive' as const}}]}:{};
-      [records,total]=await Promise.all([prisma.user.findMany({where,skip,take:20,orderBy:{createdAt:'desc'},select:{uid:true,name:true,email:true,disabled:true,isPlatformAdmin:true,createdAt:true,memberships:{include:{store:{select:{name:true,id:true}}}}}}),prisma.user.count({where})]);
+      [records,total]=await Promise.all([prisma.user.findMany({where,skip,take:20,orderBy:{createdAt:'desc'},select:{uid:true,name:true,email:true,disabled:true,isPlatformAdmin:true,sessionVersion:true,mustChangePassword:true,createdAt:true,memberships:{include:{store:{select:{name:true,id:true}}}}}}),prisma.user.count({where})]);
     } else if(section==='plans') {
       const where=q?{name:{contains:q,mode:'insensitive' as const}}:{};
       [records,total]=await Promise.all([prisma.plan.findMany({where,skip,take:20,orderBy:{createdAt:'desc'},include:{_count:{select:{subscriptions:true}}}}),prisma.plan.count({where})]);
@@ -44,13 +44,24 @@ export async function getAdminDataAction(section='overview',query='',page=1) {
       const where=q?{store:{name:{contains:q,mode:'insensitive' as const}}}:{};
       [records,total]=await Promise.all([prisma.subscription.findMany({where,skip,take:20,orderBy:{startedAt:'desc'},include:{store:{select:{name:true,id:true}},plan:true}}),prisma.subscription.count({where})]);
     } else if(section==='invoices') {
-      const where=q?{subscription:{store:{name:{contains:q,mode:'insensitive' as const}}}}:{};
-      [records,total]=await Promise.all([prisma.invoice.findMany({where,skip,take:20,orderBy:[{dueDate:'desc'},{id:'asc'}],include:{subscription:{include:{store:{select:{name:true}}}}}}),prisma.invoice.count({where})]);
+      const v=z.object({status:z.enum(['Pendente','Pago','Cancelada','Vencida']).optional(),storeId:uuid.optional(),from:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),to:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()}).parse(filters);
+      const where:any=q?{subscription:{store:{name:{contains:q,mode:'insensitive' as const}}}}:{};
+      if(v.storeId)where.subscription={...where.subscription,storeId:v.storeId};
+      if(v.status)where.status=v.status==='Vencida'?'Pendente':v.status;
+      if(v.from||v.to||v.status==='Vencida')where.dueDate={...(v.from?{gte:new Date(v.from+'T00:00:00Z')}:{}),...(v.to?{lte:new Date(v.to+'T23:59:59Z')}:{}),...(v.status==='Vencida'?{lt:today}:{})};
+      [records,total]=await Promise.all([prisma.invoice.findMany({where,skip,take:20,orderBy:[{dueDate:'desc'},{id:'asc'}],include:{attachments:true,subscription:{include:{store:{select:{name:true}}}}}}),prisma.invoice.count({where})]);
     } else {
       const where=q?{OR:[{details:{contains:q,mode:'insensitive' as const}},{action:{contains:q,mode:'insensitive' as const}},{actorName:{contains:q,mode:'insensitive' as const}}]}:{};
       [records,total]=await Promise.all([prisma.platformAuditLog.findMany({where,skip,take:section==='overview'?8:20,orderBy:{date:'desc'}}),prisma.platformAuditLog.count({where})]);
     }
-    return serialize({records,total,stores,plans,organizations,today:today.toISOString(),metrics:{storeCount,activeStores,userCount,activeSubscriptions,recurring:recurring._sum.priceCents??0,received:received._sum.amountCents??0,pending:pending._sum.amountCents??0,overdue}});
+    const aging=await Promise.all([1,8,31,61].map(async(n,i)=>{
+      const limits=[7,30,60,null];const lower=new Date(today);lower.setUTCDate(lower.getUTCDate()-n);
+      const upper=limits[i]?new Date(+today-(limits[i] as number)*86400000):null;
+      const result=await prisma.invoice.aggregate({where:{status:'Pendente',dueDate:{lte:lower,...(upper?{gte:upper}:{})}},_sum:{amountCents:true},_count:true});
+      return {label:['1 a 7 dias','8 a 30 dias','31 a 60 dias','61 dias ou mais'][i],amount:result._sum.amountCents??0,count:result._count};
+    }));
+    const billed=await prisma.invoice.aggregate({where:{status:{not:'Cancelada'},dueDate:{gte:month,lt:new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth()+1,1))}},_sum:{amountCents:true}});
+    return serialize({aging,billed:billed._sum.amountCents??0,records,total,stores,plans,organizations,today:today.toISOString(),metrics:{storeCount,activeStores,userCount,activeSubscriptions,recurring:recurring._sum.priceCents??0,received:received._sum.amountCents??0,pending:pending._sum.amountCents??0,overdue}});
   },'platform');
 }
 
@@ -123,7 +134,7 @@ export async function recordInvoicePaymentAction(input:unknown) {
     if(!Number.isFinite(date.getTime()) || date.toISOString().slice(0,10)!==v.paidAt || date>commercialToday()) throw new Error('Data de pagamento inválida ou futura.');
     const invoice=await prisma.invoice.findUniqueOrThrow({where:{id:v.id},include:{subscription:true}});
     if(invoice.status!=='Pendente') throw new Error('Esta cobrança já foi paga ou cancelada.');
-    await prisma.invoice.update({where:{id:v.id},data:{status:'Pago',paidAt:date,paymentMethod:v.method,paymentReference:v.reference,notes:v.notes}});
+    await prisma.invoice.update({where:{id:v.id},data:{status:'Pago',paidAt:date,paymentMethod:v.method,paymentReference:v.reference.replace(/\s+/g,' ').normalize('NFKC'),notes:v.notes}});
     await audit('Registrar pagamento',`Cobrança ${invoice.id}; ${(invoice.amountCents/100).toFixed(2)}; ${v.method}; referência ${v.reference}.`,invoice.subscription.storeId);
   }),'platform');
 }
@@ -158,7 +169,7 @@ export async function manageUserAction(input:unknown) {
       const password=z.string().min(12).refine(p=>Buffer.byteLength(p)<=72).parse(v.password);
       passwordHash=await bcrypt.hash(password,12);
     }
-    await prisma.user.update({where:{uid:v.uid},data:{sessionVersion:{increment:1},...(passwordHash?{passwordHash}:{}),...(v.operation==='block'?{disabled:true}:v.operation==='unblock'?{disabled:false}:{})}});
+    await prisma.user.update({where:{uid:v.uid},data:{sessionVersion:{increment:1},...(passwordHash?{passwordHash,mustChangePassword:true}:{}),...(v.operation==='block'?{disabled:true}:v.operation==='unblock'?{disabled:false}:{})}});
     await audit('Gerenciar usuário',`${user.email}; operação ${v.operation}. Motivo: ${v.reason}`,v.storeId);
   }),'platform');
 }
