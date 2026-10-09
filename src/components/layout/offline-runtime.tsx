@@ -4,6 +4,7 @@ import {readOfflineUser} from '@/lib/offline-session';
 import {getFromCache} from '@/lib/offline-db';
 import {desktopBridge, type DesktopUpdateStatus} from '@/lib/desktop-storage';
 import {useAppContext} from '@/context/app-context';
+import {OfflineSyncPanel} from './offline-sync-panel';
 const routes=['/dashboard','/pos','/dashboard/products','/dashboard/inventory','/dashboard/inventory/entry','/dashboard/inventory/adjustment','/dashboard/sales','/dashboard/customers','/dashboard/suppliers','/dashboard/accounts-payable','/dashboard/purchase-orders','/dashboard/purchase-orders/new','/dashboard/purchase-orders/edit','/dashboard/customers/detail','/dashboard/cash-register','/dashboard/reports','/dashboard/reports/sales','/dashboard/reports/products','/dashboard/reports/cash-flow'];
 export function OfflineRuntime(){
  const {user,isOffline,offlineOperations}=useAppContext();const offlineRef=useRef(isOffline);offlineRef.current=isOffline;const [ready,setReady]=useState(false),[problem,setProblem]=useState('');
@@ -37,5 +38,8 @@ export function OfflineRuntime(){
   return()=>{cancelled=true;document.removeEventListener('click',navigate,true);window.removeEventListener('online',prepare);};
  },[user?.uid,user?.storeId,user?.role]);
  if(!user?.storeId)return null;
- return <div role="status" className={`border-b px-6 py-2 text-sm ${isOffline?'bg-amber-50 text-amber-900':'bg-background text-muted-foreground'}`}>{isOffline?'Sem conexão · Operações salvas neste dispositivo aguardam sincronização.':offlineOperations.length?offlineOperations.length+' operações locais aguardam confirmação.':ready?'Dispositivo preparado para operar offline.':problem||'Preparando este dispositivo para operar offline…'}{update&&['downloading','ready'].includes(update.state)&&<span className="ml-4">{update.message}</span>}</div>;
+ return <div className={`flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-6 py-2 text-sm ${isOffline?'bg-amber-50 text-amber-900':'bg-background text-muted-foreground'}`}>
+  <div role="status" className="min-w-0 flex-1">{isOffline?'Sem conexão · Operações salvas neste dispositivo aguardam sincronização.':offlineOperations.length?offlineOperations.length+' operações locais aguardam confirmação.':ready?'Dispositivo preparado para operar offline.':problem||'Preparando este dispositivo para operar offline…'}{update&&['downloading','ready'].includes(update.state)&&<span className="ml-4">{update.message}</span>}</div>
+  <OfflineSyncPanel />
+ </div>;
 }

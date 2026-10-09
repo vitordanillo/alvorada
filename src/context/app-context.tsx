@@ -14,7 +14,6 @@ import {projectService} from '@/lib/offline-service-projection';
 import {projectOperations, type OfflineSnapshot} from '@/lib/offline-projection';
 import {rememberOfflineUser,readOfflineUser,forgetOfflineUser,serverReachable,locallySignedOut} from '@/lib/offline-session';
 import {OfflineRuntime} from '@/components/layout/offline-runtime';
-import { OfflineSyncPanel } from '@/components/layout/offline-sync-panel';
 import type { Product, Customer, Sale, Supplier, User, CashRegisterSession, CashTransaction, StockAdjustmentLog, SystemSettings, StockEntryLog, ProductChangeLog, AccountsPayable, PurchaseOrder } from '@/lib/types';
 import type { ProductFormData } from '@/components/products/product-form';
 import {
@@ -598,7 +597,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       receivePurchaseOrder, login, logout, reloadUser, dataError, dataPage, syncOfflineSales, offlineSync, offlineOperations, isOffline, executeOfflineOperation, retryData:refreshData
     }}>
       <OfflineRuntime />{children}
-      {user?.storeId && <OfflineSyncPanel />}
     </AppContext.Provider>
   );
 };
