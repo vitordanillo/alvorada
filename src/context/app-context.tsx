@@ -269,7 +269,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         if(result&&!result.ok&&result.confirmedRejected){await db.removeOperation(scope,id);throw new Error(result.error);}
       }
       if(scopeRef.current!==scope)throw new Error('Operação salva na loja anterior. Retorne a ela para acompanhar a sincronização.');
-      operations=await db.getOperations(scope);setOfflineOperations(operations);hydrate(baseRef.current,operations);setIsOffline(true);
+      operations=await db.getOperations(scope);setOfflineOperations(operations);hydrate(baseRef.current,operations);setIsOffline(!reachable);
       window.dispatchEvent(new Event('alvorada-operations-changed'));
       const projected=projectOperations(baseRef.current,operations,user);
       if(kind==='sale')return projected.sales.find((r:any)=>r.id===id);
@@ -320,6 +320,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // On mount: Check auth session and sync offline sales
   useEffect(() => {
+    if(localStorage.getItem('alvorada-offline-signed-out')==='1'){if(navigator.onLine)void logoutUserAction().catch(()=>{});setLoadingAuth(false);return;}
     getCurrentUserAction()
       .then((currentUser) => {
         rememberOfflineUser(currentUser);setUser(currentUser);
@@ -356,7 +357,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         window.clearInterval(timer);window.removeEventListener('online', syncOfflineSales);
       };
     }
-  }, [user]);
+  }, [user,pathname,searchParams]);
 
   // On user change: Load or clear database listings
   useEffect(() => {
