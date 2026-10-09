@@ -33,7 +33,7 @@ Backups ficam na subpasta `backups`, com retenção de dez cópias. A desinstala
 
 ### Assinatura do Windows
 
-A primeira versão é **sem assinatura Authenticode**. HTTPS e SHA-512 protegem transporte e integridade; não substituem a identificação do editor. O Windows pode exibir aviso de editor desconhecido. Para a distribuição comercial, configurar certificado de assinatura da Firma Conecta ou serviço de assinatura, mantendo o mesmo appId/GUID; não há certificado de assinatura disponível nesta configuração inicial. O updater mantém seu mecanismo padrão de verificação de assinatura quando o publisher é configurado, sem exceções personalizadas.
+A primeira versão é **sem assinatura Authenticode**. HTTPS e SHA-512 protegem transporte e integridade; não substituem a identificação do editor. O Windows pode exibir aviso de editor desconhecido. Para a distribuição comercial, configurar certificado de assinatura de Granzoti Sistemas ou serviço de assinatura, mantendo o mesmo appId/GUID; não há certificado de assinatura disponível nesta configuração inicial. O updater mantém seu mecanismo padrão de verificação de assinatura quando o publisher é configurado, sem exceções personalizadas.
 
 ## Construção
 
