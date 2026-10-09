@@ -56,11 +56,11 @@ function setupUpdater() {
   autoUpdater.on('update-available', info=>publish({state:'downloading',availableVersion:info.version,message:'Nova versão disponível. Baixando em segundo plano…'}));
   autoUpdater.on('download-progress', progress=>publish({state:'downloading',percent:Math.round(progress.percent),message:`Baixando atualização: ${Math.round(progress.percent)}%. Você pode continuar trabalhando.`}));
   autoUpdater.on('update-not-available',()=>publish({state:'current',message:'O Alvorada está atualizado.'}));
-  autoUpdater.on('error', error=>{log(`updater: ${error.code || 'error'}`);publish({state:'error',message:'Atualização indisponível no momento. Seus dados foram preservados; tentaremos novamente.'});});
+  autoUpdater.on('error', error=>{log(`updater: ${error.code || 'error'}`);publish({state:'error',message:'Atualização indisponível no momento. Seus dados foram preservados; tentaremos novamente.'});if(installing)app.quit();});
   autoUpdater.on('update-downloaded',()=>{
     downloaded=true;
     publish({state:'ready',message:'Atualização baixada. Será aplicada ao encerrar o aplicativo.'});
-    if(Notification.isSupported())new Notification({title:'Alvorada atualizado',body:'Nova versão pronta. Continue trabalhando; ela será aplicada ao encerrar o aplicativo.'}).show();
+    if(Notification.isSupported())new Notification({title:'Atualização do Alvorada',body:'Nova versão pronta. Continue trabalhando; ela será aplicada ao encerrar o aplicativo.'}).show();
   });
   setTimeout(()=>checkUpdates(),15000).unref();
   setInterval(()=>checkUpdates(),4*60*60*1000).unref();
@@ -74,6 +74,7 @@ else {
     appSession=win.webContents.session;
     localShell=new LocalShell(appSession,storage);
     win.webContents.on('will-navigate',(event,url)=>{if(new URL(url).origin!==ORIGIN){event.preventDefault();}});
+    win.webContents.on('will-redirect',(event,url)=>{if(new URL(url).origin!==ORIGIN){event.preventDefault();}});
     win.webContents.on('will-attach-webview',event=>event.preventDefault());
     win.webContents.setWindowOpenHandler(({url})=>{
       // Existing receipt printing opens an isolated about:blank window.
@@ -81,7 +82,8 @@ else {
       if(url.startsWith('https:'))void shell.openExternal(url);
       return {action:'deny'};
     });
-    win.webContents.session.setPermissionRequestHandler((_contents,permission,callback,details)=>callback(details.requestingUrl?.startsWith(ORIGIN+'/')&&permission==='camera'));
+    appSession.setPermissionCheckHandler((_contents,permission,origin,details)=>origin===ORIGIN&&(permission==='persistent-storage'||permission==='media'&&details.mediaType==='video'));
+    appSession.setPermissionRequestHandler((_contents,permission,callback,details)=>callback(details.requestingUrl?.startsWith(ORIGIN+'/')&&(permission==='persistent-storage'||permission==='media'&&details.mediaTypes?.includes('video')&&!details.mediaTypes?.includes('audio'))));
     ipcMain.handle('alvorada:storage',(event,...args)=>{if(!trusted(event))throw new Error('Origem não autorizada.');return storage.invoke(...args);});
     ipcMain.handle('alvorada:update-status',event=>{if(!trusted(event))throw new Error('Origem não autorizada.');return status;});
     ipcMain.handle('alvorada:scope',(event,scope,expires)=>{if(!trusted(event))throw new Error('Origem não autorizada.');if(scope===null)localShell.lock();else localShell.activate(scope,expires);});
@@ -102,7 +104,7 @@ else {
         if(downloaded)await storage.snapshot(`before-update-${app.getVersion()}`);
         storage.db.exec('PRAGMA wal_checkpoint(FULL)');
         storage.close();storage=null;
-        if(downloaded){installing=true;autoUpdater.quitAndInstall(true,true);}
+        if(downloaded){installing=true;autoUpdater.quitAndInstall(true,false);}
         else{shuttingDown=true;app.quit();}
       }catch(error){closing=false;log(`shutdown: ${error.message}`);downloaded=false;publish({state:'error',message:'Atualização adiada porque a cópia de segurança não foi concluída.'});await dialog.showMessageBox({type:'error',message:'A atualização foi adiada.',detail:'Não foi possível criar a cópia de segurança dos dados locais. Libere espaço e tente encerrar novamente.'});}
     })();
