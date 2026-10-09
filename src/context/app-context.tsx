@@ -9,6 +9,7 @@ import type {OfflineOperation} from '@/lib/offline-operation-types';
 import {operationLabels} from '@/lib/offline-operation-types';
 import {getServiceDataAction} from '@/lib/service-actions';
 import {submitOfflineOperationAction} from '@/lib/offline-operation-actions';
+import {validateOfflineOperation} from '@/lib/offline-validation';
 import {projectService} from '@/lib/offline-service-projection';
 import {projectOperations, type OfflineSnapshot} from '@/lib/offline-projection';
 import {rememberOfflineUser,readOfflineUser,forgetOfflineUser,serverReachable} from '@/lib/offline-session';
@@ -240,6 +241,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const id=kind==='sale'&&/^[a-f0-9-]{36}$/i.test(args[0]?.clientRequestId??'')?args[0].clientRequestId:newRequestId();const item:OfflineOperation={id,storeId:user.storeId,userId:user.uid,kind,args:JSON.parse(JSON.stringify(args)),createdAt:new Date().toISOString(),sequence:Date.now()*1000,attempts:0,state:'pending'};
       if(kind==='sale')item.args=[{...args[0],clientRequestId:args[0].clientRequestId??id},args[1]];
       const currentOperations=await db.getOperations(scope),current=projectOperations(baseRef.current,currentOperations,user);
+      validateOfflineOperation(kind,item.args,current,user);
       const guardPlans:Record<string,[string,string,string,string[]]>={correctClosing:['cashRegisterSession','cashSessions',args[0],['status','closingBalance']],correctOpening:['cashRegisterSession','cashSessions',args[0],['status','openingBalance','calculatedCashInDrawer']],reopenCash:['cashRegisterSession','cashSessions',args[0],['status','closingBalance']],cancelOpening:['cashRegisterSession','cashSessions',args[0],['status','totalSales','calculatedCashInDrawer']],updateProduct:['product','products',args[0]?.id,['stock','price','averageCost','status']],adjustStock:['product','products',args[0],['stock','price','averageCost','status']],updateCustomer:['customer','customers',args[0]?.id,['balance','creditLimit']],closeCash:['cashRegisterSession','cashSessions',args[0],['status','totalSales','calculatedCashInDrawer']],updatePayable:['accountsPayable','accountsPayable',args[0],['status','amount']],markPayablePaid:['accountsPayable','accountsPayable',args[0],['status','amount']],updatePurchaseOrder:['purchaseOrder','purchaseOrders',args[0],['status']]};
       const guard=guardPlans[kind];if(guard){const row=current[guard[1]]?.find((r:any)=>r.id===guard[2]);if(row)item.guard={entity:guard[0],id:guard[2],values:Object.fromEntries(guard[3].map(k=>[k,row[k]??null]))};}
       const serviceBase=await db.getFromCache<any>(scope,'service:base');

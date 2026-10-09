@@ -10,7 +10,7 @@ export function projectOperations(base:OfflineSnapshot,operations:OfflineOperati
  const remove=(key:string,id:string)=>{d[key]=d[key].filter((r:any)=>r.id!==id);};
  const insert=(key:string,row:any)=>{if(!d[key].some((r:any)=>r.id===row.id))d[key].unshift(row);};
  let currentDate='' ;
- const stock=(id:string,qty:number,cost?:number)=>{const p=d.products.find((p:any)=>p.id===id);if(p){const next=p.stock+qty;const change:any={stock:next};if(cost!==undefined&&qty>0){change.averageCost=next>0?(p.stock*p.averageCost+qty*cost)/next:cost;change.costHistory=[...(p.costHistory??[]),{date:currentDate,quantity:qty,cost}];}patch('products',id,change);}};
+ const stock=(id:string,qty:number,cost?:number)=>{const p=d.products.find((p:any)=>p.id===id);if(p){const next=p.stock+qty;const change:any={stock:next};if(cost!==undefined&&qty>0){change.costHistory=[...(p.costHistory??[]),{date:currentDate,quantity:qty,cost}].slice(-10);const quantity=change.costHistory.reduce((n:number,h:any)=>n+h.quantity,0);change.averageCost=quantity>0?change.costHistory.reduce((n:number,h:any)=>n+h.cost*h.quantity,0)/quantity:0;}patch('products',id,change);}};
  for(const op of operations){
   const p=op.args,id=op.id,date=op.createdAt;currentDate=date;
   const cash=(sessionId:string,amount:number,field?:string)=>{const s=d.cashSessions.find((s:any)=>s.id===sessionId);if(s)patch('cashSessions',s.id,{calculatedCashInDrawer:s.calculatedCashInDrawer+amount,...(field?{[field]:(s[field]??0)+Math.abs(amount)}:{})});};
@@ -25,7 +25,7 @@ export function projectOperations(base:OfflineSnapshot,operations:OfflineOperati
    case 'closeTab':if(serviceResult.result)recordSale(serviceResult.result,p[0].sessionId,false);break;
    case 'purchaseTickets':if(serviceResult.result?.sale)recordSale(serviceResult.result.sale,p[0].sessionId);break;
    case 'addProduct':insert('products',{...p[0],id,sku:'Local',status:'Ativo',averageCost:0,costHistory:[]});break;
-   case 'updateProduct':patch('products',p[0].id,p[0]);break;
+   case 'updateProduct':{const {id:productId,stock,averageCost,costHistory,sku,status,...fields}=p[0];patch('products',productId,fields);break;}
    case 'setProductStatus':patch('products',p[0],{status:p[1]});break;
    case 'addStock':for(const item of p[0])stock(item.productId,item.quantity,item.cost);insert('stockEntryLogs',{id,date,supplierId:p[1].id,supplierName:p[1].name,items:p[0].map((i:any)=>({...i,productName:d.products.find((r:any)=>r.id===i.productId)?.name??''})),totalCost:p[0].reduce((n:number,i:any)=>n+i.cost*i.quantity,0),totalItems:p[0].reduce((n:number,i:any)=>n+i.quantity,0),registeredBy:actor});break;
    case 'adjustStock':{const product=d.products.find((r:any)=>r.id===p[0]);if(product){insert('stockAdjustmentLogs',{id,date,productId:p[0],productName:product.name,oldQuantity:product.stock,newQuantity:p[1],reason:p[2],notes:p[3],adjustedBy:actor});patch('products',p[0],{stock:p[1]});}break;}
