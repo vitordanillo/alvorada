@@ -10,7 +10,11 @@ const allowed=url=>url.pathname==='/pos'||url.pathname==='/dashboard'||url.pathn
 function forward(session,request,timeout){
   return new Promise((resolve,reject)=>{
     const headers=Object.fromEntries([...request.headers].filter(([name])=>!['content-length','host','connection','transfer-encoding','keep-alive','te','trailer','upgrade'].includes(name)));
-    const upstream=net.request({url:request.url,method:request.method,headers,session,credentials:'include',redirect:'manual',bypassCustomProtocolHandlers:true});
+    // Chromium omits Origin from protocol Request.headers. Preserve the actual
+    // renderer initiator, including untrusted origins, for server CSRF checks.
+    const origin=request.initiatorOrigin||request.headers.get('origin')||undefined;
+    if(origin)headers.origin=origin;
+    const upstream=net.request({url:request.url,method:request.method,headers,origin,session,credentials:'include',redirect:'manual',bypassCustomProtocolHandlers:true});
     const timer=setTimeout(()=>{reject(new Error('Tempo de conexão excedido.'));upstream.abort();},timeout);
     const responseHeaders=values=>{
       const result=new Headers();

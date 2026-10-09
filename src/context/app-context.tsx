@@ -264,7 +264,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       // Submit only the head of the queue so dependent records are committed in order.
       if(operations[0]?.id===id&&reachable){
         let result:Awaited<ReturnType<typeof submitOfflineOperationAction>>|undefined;
-        try{result=await submitOfflineOperationAction(item);}catch{/* Unknown result is retained and retried with the same ID. */}
+        try{result=await submitOfflineOperationAction(item);}catch(error){
+          const message=error instanceof Error?error.message:'Não foi possível confirmar a operação. Ela continua salva para reenvio.';
+          await db.queueOperation(scope,{...item,attempts:item.attempts+1,lastError:message});
+          setOfflineSync(prev=>({...prev,error:message}));
+        }
         if(result?.ok){await db.removeOperation(scope,id);if(scopeRef.current===scope)await refreshData();return result.result??(kind==='addPurchaseOrder'||kind==='openTab'?id:undefined);}
         if(result&&!result.ok&&result.confirmedRejected){await db.removeOperation(scope,id);throw new Error(result.error);}
       }
@@ -289,8 +293,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const db=await import('@/lib/offline-db');
       const legacy=await db.getLegacyQueuedSales();
       if(legacy.length){const owned=await getLegacyOfflineSessionsAction([...new Set(legacy.map(s=>s.activeSessionId))],storeId);await db.recoverLegacySales(scope,legacy.filter(s=>owned.includes(s.activeSessionId)));}
-      const queued=await db.getQueuedSales(scope);let accepted=0;
-      if(!await serverReachable()){setIsOffline(true);return;}
+      const queued=await db.getQueuedSales(scope);let accepted=0;let syncError='';
+      if(!await serverReachable()){setIsOffline(true);setOfflineSync(prev=>({...prev,error:'Sem conexão com o servidor. As operações estão salvas; a sincronização será tentada automaticamente.'}));return;}
       for(const item of queued){
         if(scopeRef.current!==scope || !navigator.onLine)break;
         const canonical={...item,saleData:{...item.saleData,clientRequestId:item.saleData.clientRequestId??item.id}};
@@ -299,7 +303,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           const result=await submitSaleAction(canonical.saleData,canonical.activeSessionId,storeId);
           if(!result.ok)throw new Error(result.error);
           await db.removeQueuedSale(scope,item.id);accepted++;
-        }catch(error){await db.queueOfflineSale(scope,{...canonical,attempts:(item.attempts??0)+1,lastError:error instanceof Error?error.message:'Não foi possível confirmar.'});}
+        }catch(error){syncError=error instanceof Error?error.message:'Não foi possível confirmar a venda.';await db.queueOfflineSale(scope,{...canonical,attempts:(item.attempts??0)+1,lastError:syncError});}
       }
       for(const operation of (await db.getQueuedSales(scope)).length?[]:await db.getOperations(scope)){
         if(scopeRef.current!==scope||!navigator.onLine)break;
@@ -307,13 +311,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         try{
           const result=await submitOfflineOperationAction(operation);
           if(result.ok){await db.removeOperation(scope,operation.id);accepted++;}
-          else{await db.queueOperation(scope,{...operation,attempts:operation.attempts+1,lastError:result.error,state:result.confirmedRejected?'conflict':'pending'});break;}
-        }catch{await db.queueOperation(scope,{...operation,attempts:operation.attempts+1,lastError:'Sem confirmação. Reenvio preserva o identificador original.'});break;}
+          else{syncError=result.error;await db.queueOperation(scope,{...operation,attempts:operation.attempts+1,lastError:result.error,state:result.confirmedRejected?'conflict':'pending'});break;}
+        }catch(error){syncError=error instanceof Error?error.message:'Não foi possível confirmar a operação. Ela continua salva para reenvio.';await db.queueOperation(scope,{...operation,attempts:operation.attempts+1,lastError:syncError});break;}
       }
       if(scopeRef.current===scope){setOfflineOperations(await db.getOperations(scope));setIsOffline(false);window.dispatchEvent(new Event('alvorada-operations-changed'));}
-      const items=await db.getQueuedSales(scope);const lastSync=new Date().toISOString();
-      await db.saveToCache(scope,'lastSync',lastSync);
-      if(scopeRef.current===scope){setOfflineSync({items,syncing:false,lastSync,error:''});if(accepted)await refreshData();}
+      const items=await db.getQueuedSales(scope);
+      const remaining=await db.getOperations(scope);
+      if(!syncError&&remaining.some(item=>item.state==='conflict'))syncError='Há uma operação que precisa de revisão. Abra as pendências para ver o motivo.';
+      const confirmed=accepted>0||(!items.length&&!remaining.length);
+      const lastSync=confirmed?new Date().toISOString():await db.getFromCache<string>(scope,'lastSync')??'';
+      if(confirmed)await db.saveToCache(scope,'lastSync',lastSync);
+      if(scopeRef.current===scope){setOfflineSync({items,syncing:false,lastSync,error:syncError});if(accepted)await refreshData();}
     }catch(error){if(scopeRef.current===scope)setOfflineSync(prev=>({...prev,error:'Falha na sincronização. As pendências foram preservadas.',syncing:false}));}
     finally{syncLock.current=false;if(scopeRef.current===scope)setOfflineSync(prev=>({...prev,syncing:false}));}
   };
