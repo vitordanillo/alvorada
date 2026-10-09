@@ -1,4 +1,4 @@
-import { withTransaction } from './db';
+import { withTransaction, currentEntityId, currentOperationTime } from './db';
 import type { Sale, User } from './types';
 
 export async function processSale(
@@ -71,6 +71,8 @@ export async function processSale(
     if (customer && pointsUsed > customer.loyaltyPoints) throw new Error('Pontos de fidelidade insuficientes.');
     const totalCost = items.reduce((sum, item) => sum + item.quantity * item.costAtTimeOfSale, 0);
     const sale = await tx.sale.create({ data: {
+      ...(currentOperationTime()?{date:currentOperationTime()}:{}),
+      ...(currentEntityId()?{id:currentEntityId()}:{}),
       items, total, totalCost, totalProfit: total - totalCost,
       customerId: customer?.id ?? 'default', customerName: customer?.name ?? (tab?`${tab.table.name}${tab.customerName?' · '+tab.customerName:''}`:'Consumidor final'),
       paymentMethods, cashRegisterSessionId: session.id, status: 'Concluída', storeId,

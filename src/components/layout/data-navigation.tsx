@@ -5,7 +5,7 @@ import {useAppContext} from '@/context/app-context';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 export function DataNavigation(){
- const {dataPage,loading}=useAppContext(),pathname=usePathname(),params=useSearchParams(),router=useRouter();
+ const {dataPage,loading,isOffline}=useAppContext(),pathname=usePathname(),params=useSearchParams(),router=useRouter();
  const [search,setSearch]=useState(params.get('search')??''),[from,setFrom]=useState(params.get('from')??''),[to,setTo]=useState(params.get('to')??'');
  useEffect(()=>{setSearch(params.get('search')??'');setFrom(params.get('from')??'');setTo(params.get('to')??'');},[pathname,params]);
  const go=(page:number)=>{const next=new URLSearchParams(params.toString());next.set('page',String(page));for(const [key,value] of [['search',search],['from',from],['to',to]])value?next.set(key,value):next.delete(key);router.push(pathname+'?'+next.toString());};
@@ -14,7 +14,7 @@ export function DataNavigation(){
  const active=Boolean(params.get('search')||params.get('from')||params.get('to'));
  return <div className="mt-6 border-t pt-4">
   <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-   <span className="text-muted-foreground">{dataPage.total} registros{pages>1&&` · Página ${dataPage.page} de ${pages}`}</span>
+   <span className="text-muted-foreground">{dataPage.total} {isOffline?'registros neste dispositivo':'registros'}{pages>1&&` · Página ${dataPage.page} de ${pages}`}</span>
    {pages>1&&<nav aria-label="Paginação" className="flex gap-2"><Button size="sm" variant="outline" disabled={busy||dataPage.page<=1} onClick={()=>go(dataPage.page-1)}>Anterior</Button><Button size="sm" variant="outline" disabled={busy||dataPage.page>=pages} onClick={()=>go(dataPage.page+1)}>Próxima</Button></nav>}
   </div>
   <details key={pathname} className="mt-3 text-sm">

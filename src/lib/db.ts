@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { Prisma, PrismaClient } from '@prisma/client';
 import type { User } from './types';
 
-type DbContext = { uid?: string; email?: string; storeId?: string; platformAdmin?: boolean; profileWrite?: boolean; user?: User; tx?: Prisma.TransactionClient };
+type DbContext = { uid?: string; email?: string; storeId?: string; platformAdmin?: boolean; profileWrite?: boolean; user?: User; tx?: Prisma.TransactionClient; entityId?: string; ticketCodes?: string[]; eventTime?: Date };
 const context = new AsyncLocalStorage<DbContext>();
 const globalForPrisma = globalThis as unknown as { alvoradaDb?: PrismaClient };
 const client = globalForPrisma.alvoradaDb ?? new PrismaClient({ log: ['error'] });
@@ -13,6 +13,9 @@ export function withDbContext<T>(value: DbContext, operation: () => Promise<T>):
 }
 
 export function currentDbUser(): User | undefined { return context.getStore()?.user; }
+export function currentEntityId(): string | undefined { return context.getStore()?.entityId; }
+export function currentOperationTime(): Date | undefined { return context.getStore()?.eventTime; }
+export function currentTicketCodes(): string[] | undefined { return context.getStore()?.ticketCodes; }
 
 async function setContext(tx: Prisma.TransactionClient, value: DbContext) {
   // Transaction-local settings cannot leak to another request through the pool.

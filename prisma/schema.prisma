@@ -493,3 +493,14 @@ model InvoiceAttachment {
  uploadedBy String
  @@index([invoiceId])
 }
+
+model OfflineReceipt {
+  id String @id
+  storeId String
+  userId String
+  kind String
+  inputHash String
+  result Json
+  createdAt DateTime @default(now())
+  @@index([storeId, userId, createdAt])
+}

@@ -1,5 +1,6 @@
 
 'use client';
+import {newRequestId} from '@/lib/request-id';
 
 import * as React from 'react';
 import Link from 'next/link';
@@ -45,6 +46,7 @@ export default function POSPage() {
   const { user, loadingAuth } = useAuth();
   const { products, customers, addSale, activeSession } = useAppContext();
   const [cart, setCart] = React.useState<CartItem[]>([]);
+  const saleRequest=React.useRef('');
   const [searchTerm, setSearchTerm] = React.useState('');
   const [activeCategory, setActiveCategory] = React.useState('Todos');
   const [isFinishing, setIsFinishing] = React.useState(false);
@@ -79,6 +81,17 @@ export default function POSPage() {
   const [payments, setPayments] = React.useState<Payment[]>([]);
   const [currentPaymentAmount, setCurrentPaymentAmount] = React.useState('');
 
+  const draftScope=user?.storeId?`${user.uid}:${user.storeId}`:'';
+  const [draftLoaded,setDraftLoaded]=React.useState('');
+  React.useEffect(()=>{
+    if(!draftScope)return;
+    try{const draft=JSON.parse(localStorage.getItem('alvorada-pos-draft:'+draftScope)??'null');setCart(Array.isArray(draft?.cart)?draft.cart:[]);setSelectedCustomer(draft?.customer?.id?draft.customer:defaultCustomer);saleRequest.current=draft?.requestId??'';}catch{setCart([]);}
+    setDraftLoaded(draftScope);
+  },[draftScope]);
+  React.useEffect(()=>{
+    if(!draftScope||draftLoaded!==draftScope)return;
+    try{localStorage.setItem('alvorada-pos-draft:'+draftScope,JSON.stringify({cart,customer:selectedCustomer,requestId:saleRequest.current}));}catch{toast({variant:'destructive',title:'Armazenamento indisponível',description:'Não foi possível salvar o rascunho do carrinho neste dispositivo.'});}
+  },[cart,selectedCustomer,draftScope,draftLoaded]);
   const [isOnline, setIsOnline] = React.useState(true);
 
   React.useEffect(() => {
@@ -183,7 +196,10 @@ export default function POSPage() {
   const handleFinishPurchase = async () => {
     setIsFinishing(true);
     try {
+        saleRequest.current||=newRequestId();
+        localStorage.setItem('alvorada-pos-draft:'+draftScope,JSON.stringify({cart,customer:selectedCustomer,requestId:saleRequest.current}));
         const newSaleData = {
+          clientRequestId:saleRequest.current,
           customerId: selectedCustomer.id,
           customerName: selectedCustomer.name,
           paymentMethods: payments,
@@ -198,7 +214,7 @@ export default function POSPage() {
 
         const newSale = await addSale(newSaleData);
 
-        setCart([]);
+        saleRequest.current='';setCart([]);
         setSelectedCustomer(defaultCustomer);
         setPayments([]);
         setCurrentPaymentAmount('');

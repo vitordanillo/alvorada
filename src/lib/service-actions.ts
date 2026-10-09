@@ -1,7 +1,7 @@
 'use server';
 import { z } from 'zod';
 import { randomBytes } from 'node:crypto';
-import { prisma, withTransaction } from './db';
+import { prisma, withTransaction, currentEntityId, currentTicketCodes, currentOperationTime } from './db';
 import { withAuthenticatedAction, verifyUserRole } from './auth';
 import { requireModule } from './module-access';
 import { processSale } from './sales-service';
@@ -34,7 +34,7 @@ export async function saveServiceTableAction(storeId:string,input:unknown) {
     const v=z.object({id:id.optional(),name:z.string().trim().min(1).max(60),active:z.boolean()}).parse(input);
     if(v.id&&!v.active&&await tx.serviceTab.count({where:{storeId,tableId:v.id,status:'Aberta'}}))throw new Error('Feche a conta antes de desativar a mesa.');
     if(v.id)await tx.serviceTable.update({where:{id:v.id,storeId},data:{name:v.name,active:v.active}});
-    else await tx.serviceTable.create({data:{storeId,name:v.name,active:v.active}});
+    else await tx.serviceTable.create({data:{id:currentEntityId(),storeId,name:v.name,active:v.active}});
     await audit(user,'Cadastro de mesa',`${v.name}; ${v.active?'ativa':'inativa'}.`);
   }));
 }
@@ -44,8 +44,8 @@ export async function openServiceTabAction(storeId:string,tableId:string,custome
     const user=await requireModule('mesas_fichas',id.parse(storeId));id.parse(tableId);
     const table=await tx.serviceTable.findUniqueOrThrow({where:{id:tableId,storeId}});
     if(!table.active)throw new Error('Mesa desativada.');
-    const existing=await tx.serviceTab.findFirst({where:{tableId,storeId,status:'Aberta'}});if(existing)return existing.id;
-    const tab=await tx.serviceTab.create({data:{storeId,tableId,customerName:z.string().trim().max(100).parse(customerName),openedBy:user.uid}});
+    const existing=await tx.serviceTab.findFirst({where:{tableId,storeId,status:'Aberta'}});if(existing){if(currentEntityId()&&existing.id!==currentEntityId())throw new Error('Esta mesa foi aberta em outro dispositivo. Revise a conta antes de sincronizar.');return existing.id;}
+    const tab=await tx.serviceTab.create({data:{id:currentEntityId(),openedAt:currentOperationTime(),storeId,tableId,customerName:z.string().trim().max(100).parse(customerName),openedBy:user.uid}});
     await audit(user,'Abertura de mesa',`${table.name}; conta ${tab.id}.`);return tab.id;
   }));
 }
@@ -62,7 +62,7 @@ export async function addServiceItemAction(storeId:string,input:unknown) {
     if(product.status!=='Ativo'||product.stock<v.quantity)throw new Error('Produto indisponível ou estoque insuficiente.');
     const earlier=await tx.serviceTabItem.findFirst({where:{tabId:tab.id,storeId,productId:product.id,cancelledAt:null},orderBy:{addedAt:'asc'}});
     if(Math.abs(v.expectedPrice-(earlier?.price??product.price))>0.000001)throw new Error('Preço alterado. Atualize a conta antes de lançar.');
-    await tx.serviceTabItem.create({data:{storeId,tabId:tab.id,productId:product.id,productName:product.name,quantity:v.quantity,price:earlier?.price??product.price,costAtTimeOfUse:product.averageCost,unit:product.unit,requestId:v.requestId,addedBy:user.uid}});
+    await tx.serviceTabItem.create({data:{id:currentEntityId(),addedAt:currentOperationTime(),storeId,tabId:tab.id,productId:product.id,productName:product.name,quantity:v.quantity,price:earlier?.price??product.price,costAtTimeOfUse:product.averageCost,unit:product.unit,requestId:v.requestId,addedBy:user.uid}});
     await tx.product.update({where:{id:product.id,storeId},data:{stock:{decrement:v.quantity}}});
     await audit(user,'Consumo da mesa',`Conta ${tab.id}; ${v.quantity} ${product.unit} de ${product.name}; estoque baixado.`);
   }));
@@ -87,7 +87,7 @@ export async function cancelServiceTabAction(storeId:string,tabId:string,reason:
     if(tab.status==='Cancelada')return;if(tab.status!=='Aberta')throw new Error('Esta conta já foi paga. Cancele a venda pelo fluxo existente.');
     const restored=new Map<string,number>();for(const item of tab.items)restored.set(item.productId,(restored.get(item.productId)??0)+item.quantity);
     for(const [productId,quantity] of restored)await tx.product.update({where:{id:productId,storeId},data:{stock:{increment:quantity}}});
-    await tx.serviceTab.update({where:{id:tab.id,storeId},data:{status:'Cancelada',closedAt:new Date()}});
+    await tx.serviceTab.update({where:{id:tab.id,storeId},data:{status:'Cancelada',closedAt:currentOperationTime()??new Date()}});
     await audit(user,'Cancelamento de mesa',`Conta ${tab.id}; estoque devolvido; motivo: ${reason}.`);
   }));
 }
@@ -109,7 +109,7 @@ export async function closeServiceTabAction(storeId:string,input:unknown) {
     const items=[...grouped.values()],total=items.reduce((n,i)=>n+i.price*i.quantity,0);
     if(Math.round(total*100)!==v.totalCents)throw new Error('A conta da mesa mudou. Atualize antes de fechar.');
     const sale=await processSale({items,total:Math.round(total*100)/100,customerId:'default',customerName:tab.customerName||'Consumidor final',paymentMethods:asSalePayments(v.payments),clientRequestId:`mesa:${tab.id}`},v.sessionId,user,{serviceTabId:tab.id,manualPix:true});
-    await tx.serviceTab.update({where:{id:tab.id,storeId},data:{status:'Fechada',saleId:sale.id,closedAt:new Date()}});
+    await tx.serviceTab.update({where:{id:tab.id,storeId},data:{status:'Fechada',saleId:sale.id,closedAt:currentOperationTime()??new Date()}});
     await audit(user,'Fechamento de mesa',`Conta ${tab.id}; venda ${sale.id}; total R$ ${sale.total.toFixed(2)}.${v.payments.some(p=>p.method==='Pix')?' Pix conferido manualmente pelo operador.':''}`);return serialize(sale);
   }));
 }
@@ -121,7 +121,7 @@ async function issueTickets(saleId:string,user:User) {
   const units=items.reduce((n,i)=>n+i.quantity,0);
   if(items.some(i=>!Number.isInteger(i.quantity))||units>200)throw new Error('Fichas exigem quantidades inteiras, com até 200 unidades por venda.');
   const rows=[];
-  for(let i=0;i<items.length;i++)for(let unit=1;unit<=items[i].quantity;unit++)rows.push({storeId:user.storeId!,saleId,itemIndex:i,unitIndex:unit,code:'F-'+randomBytes(8).toString('hex').toUpperCase(),productName:items[i].productName,issuedBy:user.uid});
+  for(let i=0;i<items.length;i++)for(let unit=1;unit<=items[i].quantity;unit++)rows.push({storeId:user.storeId!,saleId,issuedAt:currentOperationTime(),itemIndex:i,unitIndex:unit,code:currentTicketCodes()?.[rows.length]??'F-'+randomBytes(8).toString('hex').toUpperCase(),productName:items[i].productName,issuedBy:user.uid});
   await prisma.pickupTicket.createMany({data:rows,skipDuplicates:true});
   return serialize(await prisma.pickupTicket.findMany({where:{storeId:user.storeId,saleId},orderBy:[{itemIndex:'asc'},{unitIndex:'asc'}]}));
 }
@@ -150,7 +150,7 @@ export async function redeemPickupTicketAction(storeId:string,code:string) {
     const ticket=await tx.pickupTicket.findUnique({where:{code:normalized,storeId}});if(!ticket)throw new Error('Ficha não encontrada nesta loja.');
     const sale=await tx.sale.findUniqueOrThrow({where:{id:ticket.saleId,storeId}});if(sale.status!=='Concluída')throw new Error('A venda desta ficha foi cancelada.');
     if(ticket.status!=='Pendente')throw new Error('Esta ficha já foi utilizada.');
-    await tx.pickupTicket.update({where:{id:ticket.id,storeId},data:{status:'Retirada',redeemedAt:new Date(),redeemedBy:user.uid}});
+    await tx.pickupTicket.update({where:{id:ticket.id,storeId},data:{status:'Retirada',redeemedAt:currentOperationTime()??new Date(),redeemedBy:user.uid}});
     await audit(user,'Retirada por ficha',`${ticket.code}; ${ticket.productName}; venda ${ticket.saleId}.`);return ticket.productName;
   }));
 }

@@ -111,11 +111,11 @@ export function PurchaseOrderForm({ existingOrder }: PurchaseOrderFormProps) {
       if (existingOrder) {
         await updatePurchaseOrder(existingOrder.id, orderData);
         toast({ title: "Sucesso!", description: "Pedido de compra atualizado." });
-        router.push('/dashboard/purchase-orders');
+        if(!navigator.onLine)location.assign('/dashboard/purchase-orders');else router.push('/dashboard/purchase-orders');
       } else {
         const newOrderId = await addPurchaseOrder(orderData);
         toast({ title: "Sucesso!", description: "Pedido de compra criado." });
-        router.push(`/dashboard/purchase-orders`);
+        if(!navigator.onLine)location.assign('/dashboard/purchase-orders');else router.push('/dashboard/purchase-orders');
       }
 
     } catch (error) {

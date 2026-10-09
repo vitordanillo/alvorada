@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useParams } from "next/navigation";
+import { useParams,useSearchParams } from "next/navigation";
 import { useAppContext } from "@/context/app-context";
 import { PageHeader } from "@/components/page-header";
 import { PurchaseOrderForm } from "@/components/purchase-orders/po-form";
@@ -13,7 +13,7 @@ import * as React from "react";
 
 export default function EditPurchaseOrderPage() {
     const params = useParams();
-    const id = params?.id;
+    const query=useSearchParams();const id = query.get('id')??params?.id;
     const idStr = Array.isArray(id) ? id[0] : (id || '');
     const { purchaseOrders, loading } = useAppContext();
     const [isClient, setIsClient] = React.useState(false);

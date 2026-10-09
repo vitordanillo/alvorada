@@ -49,3 +49,4 @@ next-env.d.ts
 
 /.next-improvements/
 /.next-print/
+/.next-*/

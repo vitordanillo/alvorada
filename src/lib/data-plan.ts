@@ -1,6 +1,7 @@
 export function dataPlan(path:string){
  const main=path==='/dashboard/products'?'products':path==='/dashboard/customers'?'customers':path==='/dashboard/sales'?'sales':path==='/dashboard/suppliers'?'suppliers':path==='/dashboard/accounts-payable'?'accountsPayable':path==='/dashboard/purchase-orders'?'purchaseOrders':path==='/dashboard/cash-register'?'cashSessions':'';
  const needed=new Set<string>(['cashSessions']);
+ if(path==='/offline')for(const key of ['products','customers','sales','suppliers','stockAdjustmentLogs','stockEntryLogs','productChangeLogs','accountsPayable','purchaseOrders','allUsers','systemSettings'])needed.add(key);
  if(path==='/pos'){needed.add('products');needed.add('customers');}
  else if(path.startsWith('/dashboard/products')){needed.add('products');needed.add('suppliers');}
  else if(path.startsWith('/dashboard/customers'))needed.add('customers');

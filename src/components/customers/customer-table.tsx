@@ -116,7 +116,7 @@ export function CustomerTable({ customers, onEdit, onDelete, onRegisterPayment, 
                         </DropdownMenuItem>
                       )}
                       <DropdownMenuItem asChild>
-                        <Link href={`/dashboard/customers/${customer.id}`}>Ver Histórico</Link>
+                        <Link href={`/dashboard/customers/detail?id=${customer.id}`}>Ver Histórico</Link>
                       </DropdownMenuItem>
                        <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => onEdit(customer)}>Editar</DropdownMenuItem>

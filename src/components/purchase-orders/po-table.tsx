@@ -101,7 +101,7 @@ export function PurchaseOrderTable({ orders, onReceive }: PurchaseOrderTableProp
                       </DropdownMenuItem>
                        <DropdownMenuSeparator />
                       <DropdownMenuItem asChild disabled={order.status !== 'Pendente'}>
-                        <Link href={`/dashboard/purchase-orders/${order.id}`}>
+                        <Link href={`/dashboard/purchase-orders/edit?id=${order.id}`}>
                             <Edit className="mr-2 h-4 w-4"/> Editar Pedido
                         </Link>
                       </DropdownMenuItem>

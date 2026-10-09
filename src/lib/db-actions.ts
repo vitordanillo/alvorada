@@ -1,6 +1,6 @@
 'use server';
 
-import { prisma, withTransaction, withDbContext } from './db';
+import { prisma, withTransaction, withDbContext, currentEntityId, currentOperationTime } from './db';
 import { currentUser, resolveUser, setAuthCookie, getAuthenticatedUser, verifyUserRole, withAuthenticatedAction, mapStore } from './auth';
 import { Prisma } from '@prisma/client';
 import { cookies } from 'next/headers';
@@ -371,7 +371,7 @@ export async function getInitialDataAction(expectedStoreId?: string, path = '/po
 
   const delegate:any=main?({products:prisma.product,customers:prisma.customer,sales:prisma.sale,suppliers:prisma.supplier,cashSessions:prisma.cashRegisterSession,accountsPayable:prisma.accountsPayable,purchaseOrders:prisma.purchaseOrder} as any)[main]:null;
   const total=delegate?await delegate.count({where:main==='sales'?saleFilter:filters(main)}):0;
-  const catalogCounts=path==='/pos'?await Promise.all([prisma.product.count({where:storeFilter}),prisma.customer.count({where:storeFilter})]):[0,0];
+  const catalogCounts=(path==='/pos'||path==='/offline')?await Promise.all([prisma.product.count({where:storeFilter}),prisma.customer.count({where:storeFilter})]):[0,0];
   if(role==='Estoquista'&&needed.has('purchaseOrders'))purchaseOrders=(await prisma.purchaseOrder.findMany({where:filters('purchaseOrders'),orderBy:[{dateCreated:'desc'},{id:'desc'}],...options('purchaseOrders')})).map(mapPurchaseOrder);
   return {
     meta:{main,page,pageSize,total,catalogLimited:catalogCounts.some(n=>n>5000)},
@@ -448,6 +448,7 @@ export async function addProductAction(productData: ProductFormData, expectedSto
 
     await tx.product.create({
       data: {
+        ...(currentEntityId()?{id:currentEntityId()}:{}),
         name: productData.name,
         description: (productData as any).description || null,
         brand: (productData as any).brand || null,
@@ -671,6 +672,7 @@ export async function addCustomerAction(customerData: Omit<Customer, 'id' | 'bal
   const user = await verifyUserRole(['Administrador', 'Gerente']);
   await prisma.customer.create({
     data: {
+        ...(currentEntityId()?{id:currentEntityId()}:{}),
       name: customerData.name,
       cpfCnpj: customerData.cpfCnpj || null,
       birthDate: customerData.birthDate ? new Date(customerData.birthDate) : null,
@@ -762,6 +764,8 @@ export async function addCreditPaymentAction(
 
     const newTransaction = await tx.cashTransaction.create({
       data: {
+        ...(currentOperationTime()?{date:currentOperationTime()}:{}),
+        ...(currentEntityId()?{id:currentEntityId()}:{}),
         sessionId: activeSessionId,
         type: 'Recebimento Fiado',
         amount,
@@ -930,7 +934,8 @@ export async function openCashRegisterAction(openingBalance: number, expectedSto
 
   await prisma.cashRegisterSession.create({
     data: {
-      openingTime: new Date(),
+        ...(currentEntityId()?{id:currentEntityId()}:{}),
+      openingTime: currentOperationTime()??new Date(),
       closingTime: null,
       openingBalance,
       closingBalance: null,
@@ -960,7 +965,7 @@ export async function closeCashRegisterAction(sessionId:string,closingBalance:nu
  await withTransaction(async tx=>{
  const session=await tx.cashRegisterSession.findFirst({where:{id:sessionId,storeId:user.storeId,status:'Aberto'}});if(!session)throw new Error('Este caixa já foi encerrado ou não pertence à loja.');
  const values={'Dinheiro':closingBalance,...counted};
- await tx.cashRegisterSession.update({where:{id:sessionId},data:{status:'Fechado',closingTime:new Date(),closingBalance,closingByPaymentMethod:values,closedByUid:user.uid,closedByName:user.name}});
+ await tx.cashRegisterSession.update({where:{id:sessionId},data:{status:'Fechado',closingTime:currentOperationTime()??new Date(),closingBalance,closingByPaymentMethod:values,closedByUid:user.uid,closedByName:user.name}});
  await tx.auditLog.create({data:{storeId:user.storeId,userUid:user.uid,userName:user.name,action:'Fechamento de Caixa',details:JSON.stringify({sessionId,expected:{...(session.salesByPaymentMethod as object),Dinheiro:session.calculatedCashInDrawer},counted:values})}});
  });
  });
@@ -1043,6 +1048,8 @@ export async function addCashTransactionAction(
   await withTransaction(async (tx) => {
     await tx.cashTransaction.create({
       data: {
+        ...(currentOperationTime()?{date:currentOperationTime()}:{}),
+        ...(currentEntityId()?{id:currentEntityId()}:{}),
         sessionId: activeSessionId,
         type: transactionData.type,
         amount: transactionData.amount,
@@ -1076,6 +1083,7 @@ export async function addSupplierAction(supplierData: Omit<Supplier, 'id'>, expe
   const user = await verifyUserRole(['Administrador', 'Gerente']);
   await prisma.supplier.create({
     data: {
+        ...(currentEntityId()?{id:currentEntityId()}:{}),
       name: supplierData.name,
       cnpj: supplierData.cnpj || null,
       tradeName: supplierData.tradeName || null,
@@ -1155,6 +1163,8 @@ export async function addPayableAction(
   const user = await verifyUserRole(['Administrador', 'Gerente']);
   await prisma.accountsPayable.create({
     data: {
+        ...(currentOperationTime()?{dateCreated:currentOperationTime()}:{}),
+        ...(currentEntityId()?{id:currentEntityId()}:{}),
       description: payableData.description,
       amount: payableData.amount,
       category: payableData.category || null,
@@ -1222,6 +1232,8 @@ export async function markPayableAsPaidAction(
 
       await tx.cashTransaction.create({
         data: {
+        ...(currentOperationTime()?{date:currentOperationTime()}:{}),
+        ...(currentEntityId()?{id:currentEntityId()}:{}),
           sessionId: activeSessionId,
           type: 'Despesa',
           amount: payable.amount,
@@ -1263,6 +1275,8 @@ export async function addPurchaseOrderAction(
   const user = await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
   const newOrder = await prisma.purchaseOrder.create({
     data: {
+        ...(currentOperationTime()?{dateCreated:currentOperationTime()}:{}),
+        ...(currentEntityId()?{id:currentEntityId()}:{}),
       supplierId: orderData.supplierId,
       supplierName: orderData.supplierName,
       dateExpected: new Date(orderData.dateExpected),

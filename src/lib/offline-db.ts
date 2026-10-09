@@ -1,7 +1,8 @@
 // Utility to manage IndexedDB for Offline-First POS
 const databaseName = (scope: string) => { if(!scope || !/^[a-zA-Z0-9:-]+$/.test(scope)) throw new Error('Loja e usuário são obrigatórios para o cache.'); return `AlvoradaOfflineV2:${scope}`; };
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 function safeCache(key:string,value:any){
+ if(key==='snapshot'||key.startsWith('page:')||key.startsWith('service:')||key.startsWith('report:')||key.startsWith('ledger:'))return value&&typeof value==='object'?value:null;
  if(key==='lastSync')return typeof value==='string'&&Number.isFinite(Date.parse(value))?value:null;
  if(key==='systemSettings')return value&&typeof value==='object'?{cancellationPasswordConfigured:!!value.cancellationPasswordConfigured}:null;
  if(!Array.isArray(value))return [];
@@ -77,6 +78,7 @@ export function initOfflineDb(scope: string): Promise<IDBDatabase> {
 
     request.onupgradeneeded = (event: any) => {
       const db = event.target.result;
+      if (!db.objectStoreNames.contains('operations')) db.createObjectStore('operations', {keyPath:'id'});
       if (!db.objectStoreNames.contains('salesQueue')) {
         db.createObjectStore('salesQueue', { keyPath: 'id' });
       }
@@ -100,7 +102,7 @@ export async function saveToCache(scope: string, key: string, data: any): Promis
       request.onerror = () => reject(request.error);
     });
   } catch (err) {
-    console.error('Failed to save to offline cache:', err);
+    throw err;
   }
 }
 
@@ -175,3 +177,15 @@ export async function removeQueuedSale(scope: string, id: string): Promise<void>
     throw err;
   }
 }
+
+import type {OfflineOperation} from './offline-operation-types';
+async function operationTransaction<T>(scope:string,mode:IDBTransactionMode,work:(store:IDBObjectStore)=>IDBRequest<T>):Promise<T>{
+ const db=await initOfflineDb(scope);
+ return new Promise((resolve,reject)=>{const tx=db.transaction('operations',mode);let result:T;const request=work(tx.objectStore('operations'));request.onsuccess=()=>{result=request.result;};tx.oncomplete=()=>{db.close();resolve(result);};tx.onabort=tx.onerror=()=>{db.close();reject(tx.error??new Error('Não foi possível salvar a operação no dispositivo.'));};});
+}
+export async function queueOperation(scope:string,item:OfflineOperation):Promise<void>{
+ const db=await initOfflineDb(scope);
+ await new Promise<void>((resolve,reject)=>{const tx=db.transaction('operations','readwrite');const store=tx.objectStore('operations');const read=store.getAll();read.onsuccess=()=>{const rows=read.result as OfflineOperation[];const prior=rows.find(r=>r.id===item.id);const sequence=prior?.sequence??Math.max(Date.now()*1000,...rows.map(r=>r.sequence??0))+1;store.put({...item,sequence});};tx.oncomplete=()=>{db.close();resolve();};tx.onabort=tx.onerror=()=>{db.close();reject(tx.error??new Error('Falha no armazenamento local.'));};});
+}
+export async function getOperations(scope:string):Promise<OfflineOperation[]>{const items=await operationTransaction<OfflineOperation[]>(scope,'readonly',store=>store.getAll());return items.sort((a,b)=>(a.sequence??Date.parse(a.createdAt))-(b.sequence??Date.parse(b.createdAt))||a.id.localeCompare(b.id));}
+export async function removeOperation(scope:string,id:string):Promise<void>{await operationTransaction(scope,'readwrite',store=>store.delete(id));}
