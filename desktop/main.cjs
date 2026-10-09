@@ -6,7 +6,7 @@ const {LocalShell} = require('./shell.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
 const ORIGIN = 'https://alvorada.firmaconecta.com';
-app.setName('Alvorada');
+app.setName('Granzoti Sistemas');
 app.setAppUserModelId('com.firmaconecta.alvorada');
 // Stable across all versions, separate from the executable and installation folder.
 const dataDirectory=path.join(app.getPath('appData'), 'FirmaConecta', 'Alvorada');
@@ -30,16 +30,16 @@ async function openApp() {
 }
 function menu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    {label:'Alvorada',submenu:[
+    {label:'Granzoti Sistemas',submenu:[
       {label:'Abrir PDV',click:()=>openApp()},
       {label:'Verificar atualizações',click:()=>checkUpdates(true)},
-      {label:'Situação da atualização',click:()=>dialog.showMessageBox(win,{type:'info',title:'Atualização do Alvorada',message:status.message,detail:`Versão instalada: ${app.getVersion()}`})},
-      {label:'Criar cópia dos dados locais',click:async()=>{try{await storage.snapshot('manual');await dialog.showMessageBox(win,{message:'Cópia dos dados locais criada.',detail:'Guardada na pasta de backups do Alvorada.'});}catch{await dialog.showMessageBox(win,{type:'error',message:'Não foi possível criar a cópia. Os dados originais foram preservados.'});}}},
+      {label:'Situação da atualização',click:()=>dialog.showMessageBox(win,{type:'info',title:'Atualização do Granzoti Sistemas',message:status.message,detail:`Versão instalada: ${app.getVersion()}`})},
+      {label:'Criar cópia dos dados locais',click:async()=>{try{await storage.snapshot('manual');await dialog.showMessageBox(win,{message:'Cópia dos dados locais criada.',detail:'Guardada na pasta de backups do Granzoti Sistemas.'});}catch{await dialog.showMessageBox(win,{type:'error',message:'Não foi possível criar a cópia. Os dados originais foram preservados.'});}}},
       {type:'separator'}, {label:'Sair',role:'quit'}
     ]},
     {label:'Editar',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},
     {label:'Exibir',submenu:[{role:'reload'},{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{role:'togglefullscreen'}]},
-    {label:'Ajuda',submenu:[{label:'Sobre o Alvorada',click:()=>dialog.showMessageBox(win,{message:'Alvorada — Firma Conecta',detail:`Versão ${app.getVersion()}\nGestão de lojas com operação offline e atualização automática.`})}]}
+    {label:'Ajuda',submenu:[{label:'Sobre o Granzoti Sistemas',click:()=>dialog.showMessageBox(win,{message:'Granzoti Sistemas — Firma Conecta',detail:`Versão ${app.getVersion()}\nGestão de lojas com operação offline e atualização automática.`})}]}
   ]));
 }
 async function checkUpdates(manual = false) {
@@ -55,12 +55,12 @@ function setupUpdater() {
   autoUpdater.on('checking-for-update',()=>publish({state:'checking',message:'Verificando atualizações…'}));
   autoUpdater.on('update-available', info=>publish({state:'downloading',availableVersion:info.version,message:'Nova versão disponível. Baixando em segundo plano…'}));
   autoUpdater.on('download-progress', progress=>publish({state:'downloading',percent:Math.round(progress.percent),message:`Baixando atualização: ${Math.round(progress.percent)}%. Você pode continuar trabalhando.`}));
-  autoUpdater.on('update-not-available',()=>publish({state:'current',message:'O Alvorada está atualizado.'}));
+  autoUpdater.on('update-not-available',()=>publish({state:'current',message:'O Granzoti Sistemas está atualizado.'}));
   autoUpdater.on('error', error=>{log(`updater: ${error.code || 'error'}`);publish({state:'error',message:'Atualização indisponível no momento. Seus dados foram preservados; tentaremos novamente.'});if(installing)app.quit();});
   autoUpdater.on('update-downloaded',()=>{
     downloaded=true;
     publish({state:'ready',message:'Atualização baixada. Será aplicada ao encerrar o aplicativo.'});
-    if(Notification.isSupported())new Notification({title:'Atualização do Alvorada',body:'Nova versão pronta. Continue trabalhando; ela será aplicada ao encerrar o aplicativo.'}).show();
+    if(Notification.isSupported())new Notification({title:'Atualização do Granzoti Sistemas',body:'Nova versão pronta. Continue trabalhando; ela será aplicada ao encerrar o aplicativo.'}).show();
   });
   setTimeout(()=>checkUpdates(),15000).unref();
   setInterval(()=>checkUpdates(),4*60*60*1000).unref();
@@ -70,7 +70,7 @@ else {
   app.on('second-instance',()=>{if(win){if(win.isMinimized())win.restore();win.focus();}});
   app.whenReady().then(async()=>{
     storage=new Storage(app.getPath('userData'));
-    win=new BrowserWindow({width:1440,height:940,minWidth:1000,minHeight:700,title:'Alvorada — Firma Conecta',backgroundColor:'#f8fafc',icon:path.join(__dirname,'assets/icon.ico'),webPreferences:{preload:path.join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,partition:'persist:alvorada'}});
+    win=new BrowserWindow({width:1440,height:940,minWidth:1000,minHeight:700,title:'Granzoti Sistemas — Firma Conecta',backgroundColor:'#f8fafc',icon:path.join(__dirname,'assets/icon.ico'),webPreferences:{preload:path.join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,partition:'persist:alvorada'}});
     appSession=win.webContents.session;
     localShell=new LocalShell(appSession,storage);
     win.webContents.on('will-navigate',(event,url)=>{if(new URL(url).origin!==ORIGIN){event.preventDefault();}});
@@ -90,7 +90,7 @@ else {
     ipcMain.handle('alvorada:retry',async event=>{if(event.sender!==win.webContents||event.senderFrame.url!==require('node:url').pathToFileURL(recovery).href)throw new Error('Origem não autorizada.');await openApp();});
     win.on('closed',()=>{win=null;});
     menu();setupUpdater();await openApp();
-  }).catch(async error=>{log(`startup: ${error.message}`);await dialog.showMessageBox({type:'error',message:'Não foi possível abrir o Alvorada.',detail:'Os dados locais foram preservados. Consulte o suporte da Firma Conecta.'});app.exit(1);});
+  }).catch(async error=>{log(`startup: ${error.message}`);await dialog.showMessageBox({type:'error',message:'Não foi possível abrir o Granzoti Sistemas.',detail:'Os dados locais foram preservados. Consulte o suporte da Firma Conecta.'});app.exit(1);});
   app.on('before-quit',event=>{
     if(shuttingDown||installing)return;
     if(closing){event.preventDefault();return;}

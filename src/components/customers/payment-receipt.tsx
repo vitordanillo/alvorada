@@ -60,7 +60,7 @@ export function PaymentReceipt({ data }: PaymentReceiptProps) {
       </div>
 
       <div className="text-center mt-4 text-xs">
-        <p className="text-xs">Alvorada · Firma Conecta</p>
+        <p className="text-xs">Granzoti Sistemas · Firma Conecta</p>
         <p>Obrigado!</p>
         <p className="font-bold">*** Este não é um documento fiscal ***</p>
       </div>

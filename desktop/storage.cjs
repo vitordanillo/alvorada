@@ -10,7 +10,7 @@ class Storage {
     this.db = new DatabaseSync(path.join(directory, 'alvorada.sqlite'));
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;');
     const version = this.db.prepare('PRAGMA user_version').get().user_version;
-    if (version > 1) throw new Error('Este banco exige uma versão mais recente do Alvorada.');
+    if (version > 1) throw new Error('Este banco exige uma versão mais recente do Granzoti Sistemas.');
     this.db.exec(`BEGIN IMMEDIATE;
       CREATE TABLE IF NOT EXISTS records (scope TEXT NOT NULL, bucket TEXT NOT NULL, id TEXT NOT NULL, value TEXT NOT NULL, sequence INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(scope,bucket,id));
       CREATE TABLE IF NOT EXISTS migrations (scope TEXT PRIMARY KEY, completed INTEGER NOT NULL);

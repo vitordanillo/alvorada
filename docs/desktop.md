@@ -1,8 +1,8 @@
-# Alvorada para Windows
+# Granzoti Sistemas para Windows
 
 ## Instalação e uso
 
-Instalador NSIS para Windows x64. Identidade permanente `com.firmaconecta.alvorada` e GUID `c746d24a-c962-4f47-8202-f1521c24d047`; manter ambos em todas as releases. Instalação por usuário, atalho Alvorada, sem necessidade de acesso ao Supabase no computador do cliente.
+Instalador NSIS para Windows x64. Identidade permanente `com.firmaconecta.alvorada` e GUID `c746d24a-c962-4f47-8202-f1521c24d047`; manter ambos em todas as releases. Instalação por usuário e atalho Granzoti Sistemas. O executável interno, pasta de dados, origem e URLs de atualizações conservam seus identificadores anteriores para que os clientes instalados recebam a nova marca sem reiniciar suas filas ou perfis.
 
 No primeiro acesso, conectar, autenticar e aguardar **Dispositivo preparado para operar offline**. O pacote inclui os arquivos JS/CSS e a marca do sistema. As páginas autenticadas são preparadas após a seleção da loja; o serviço de protocolo do desktop guarda essas páginas em SQLite e utiliza a cópia local quando a rede falha. O service worker também mantém o shell no perfil persistente do aplicativo. Nunca são simuladas confirmações de POST ou APIs.
 
@@ -14,7 +14,7 @@ Login inicial, renovação de sessão, administração de contas/permissões e i
 
 ## Atualizações automáticas
 
-O `electron-updater` consulta `https://alvorada.firmaconecta.com/desktop-updates/` após 15 segundos da abertura e a cada quatro horas. Há também **Alvorada → Verificar atualizações**. Baixa em segundo plano, informa progresso, preserva atendimento e aplica ao encerrar voluntariamente. Antes de aplicar, cria cópia consistente do SQLite e descarrega os dados do perfil. Falha no backup adia a atualização. O cliente não precisa baixar e executar outro instalador manualmente.
+O `electron-updater` consulta `https://alvorada.firmaconecta.com/desktop-updates/` após 15 segundos da abertura e a cada quatro horas. Há também **Granzoti Sistemas → Verificar atualizações**. Baixa em segundo plano, informa progresso, preserva atendimento e aplica ao encerrar voluntariamente. Antes de aplicar, cria cópia consistente do SQLite e descarrega os dados do perfil. Falha no backup adia a atualização. O cliente não precisa baixar e executar outro instalador manualmente.
 
 Manter a conexão para receber a nova versão. Enquanto offline, a versão atual continua disponível; a entrega será tentada novamente. Não há garantia de entrega imediata a um computador desligado ou desconectado.
 

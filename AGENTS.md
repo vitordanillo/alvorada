@@ -2,6 +2,8 @@
 
 The user requires desktop clients to receive updates without reinstalling manually.
 
+The user-facing product brand is **Granzoti Sistemas**, using the supplied symbol and wordmark in `src/assets`. Preserve legacy Alvorada storage names, application identifiers, executable filename, update artifact URLs and current domain for compatibility with installed clients. Store names are company data and must not be renamed as part of product branding.
+
 - Every production publication that changes the application UI, desktop runtime, or client API contract must include a new desktop release. Documentation-only changes do not need an installer.
 - Keep `com.firmaconecta.alvorada`, the NSIS GUID, and `%APPDATA%\FirmaConecta\Alvorada` stable. Never delete pending operations, reset client databases, or change receipt identifiers during an update.
 - Maintain compatibility with protocol 1 of `/api/offline/operations`, or implement an explicit compatible migration that preserves unsynchronized operations.

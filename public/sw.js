@@ -51,7 +51,7 @@ self.addEventListener('fetch',event=>{
    await scopeReady;
    try{const r=await fetch(req,{signal:AbortSignal.timeout(5000)});if(r.ok&&!r.redirected&&activeScope){const copy=r.clone();await caches.open(shell()).then(c=>c.put(url.pathname,copy));}return r;}
    catch{if(activeScope){const c=await caches.open(shell());const hit=await c.match(url.pathname==='/'?'/pos':url.pathname);if(hit)return hit;}
-    return new Response('<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Alvorada offline</title><body style="font:16px system-ui;padding:40px"><h1>Esta página ainda não foi preparada</h1><p>As operações salvas neste dispositivo continuam preservadas. Conecte para preparar o aplicativo ou volte ao PDV disponível.</p><a href="/pos">Abrir PDV</a></body></html>',{status:503,headers:{'Content-Type':'text/html;charset=utf-8'}});
+    return new Response('<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Granzoti Sistemas offline</title><body style="font:16px system-ui;padding:40px"><h1>Esta página ainda não foi preparada</h1><p>As operações salvas neste dispositivo continuam preservadas. Conecte para preparar o aplicativo ou volte ao PDV disponível.</p><a href="/pos">Abrir PDV</a></body></html>',{status:503,headers:{'Content-Type':'text/html;charset=utf-8'}});
    }
   })());
  }

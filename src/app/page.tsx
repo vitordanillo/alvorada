@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Logo } from '@/components/icons/logo';
+import { BrandLogo } from '@/components/icons/logo';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
 
@@ -43,8 +43,8 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-secondary px-4">
       <Card className="mx-auto w-full max-w-sm rounded-2xl bg-background shadow-2xl">
         <CardHeader className="space-y-2 text-center">
-          <div className="mx-auto inline-block"><Logo className="h-16 w-16" /></div>
-          <CardTitle className="font-headline text-3xl font-bold">Alvorada</CardTitle>
+          <div className="mx-auto w-full max-w-[260px] rounded-xl bg-white p-3"><BrandLogo className="h-auto w-full" /></div>
+          <CardTitle className="sr-only">Granzoti Sistemas</CardTitle>
           <CardDescription>Gestão de lojas por Firma Conecta.</CardDescription>
         </CardHeader>
         <CardContent>

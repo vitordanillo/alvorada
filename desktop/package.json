@@ -1,7 +1,7 @@
 {
   "name": "alvorada-desktop",
   "version": "1.0.3",
-  "description": "Alvorada — Firma Conecta",
+  "description": "Granzoti Sistemas — Firma Conecta",
   "author": "Firma Conecta",
   "private": true,
   "main": "main.cjs",
@@ -21,7 +21,7 @@
   },
   "build": {
     "appId": "com.firmaconecta.alvorada",
-    "productName": "Alvorada",
+    "productName": "Granzoti Sistemas",
     "artifactName": "Alvorada-${version}-${arch}.${ext}",
     "directories": {
       "output": "dist"
@@ -33,6 +33,7 @@
       "package.json"
     ],
     "win": {
+      "executableName": "Alvorada",
       "target": [
         {
           "target": "nsis",
@@ -50,7 +51,7 @@
       "allowElevation": false,
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
-      "shortcutName": "Alvorada",
+      "shortcutName": "Granzoti Sistemas",
       "deleteAppDataOnUninstall": false,
       "runAfterFinish": true
     },
