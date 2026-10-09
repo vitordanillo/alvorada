@@ -48,3 +48,4 @@ next-env.d.ts
 /supabase/.temp/
 
 /.next-improvements/
+/.next-print/
