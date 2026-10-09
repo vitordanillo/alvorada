@@ -23,7 +23,7 @@ class LocalShell {
       const document=request.method==='GET'&&allowed(url)&&!request.headers.has('rsc')&&(request.headers.get('accept')?.includes('text/html')||request.headers.has('x-alvorada-warm'));
       const scope=this.scope;
       try{
-        const response=await session.fetch(request,{bypassCustomProtocolHandlers:true,redirect:'manual',signal:AbortSignal.timeout(document?5000:30000)});
+        const response=await session.fetch(request,{bypassCustomProtocolHandlers:true,credentials:'include',redirect:'manual',signal:AbortSignal.timeout(document?5000:30000)});
         if(document&&response.ok&&!response.redirected&&response.headers.get('content-type')?.includes('text/html')&&this.validScope(scope)&&this.scope?.id===scope.id){
           const html=await response.clone().text();
           if(Buffer.byteLength(html)<8*1024*1024)this.storage.db.prepare('INSERT INTO shell(scope,path,html) VALUES (?,?,?) ON CONFLICT(scope,path) DO UPDATE SET html=excluded.html').run(scope.id,url.pathname,html);
