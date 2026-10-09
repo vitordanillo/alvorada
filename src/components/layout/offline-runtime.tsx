@@ -17,7 +17,7 @@ export function OfflineRuntime(){
     const worker=registration.active;if(!worker)return;
     const paths=user.role==='Operador de Caixa'?['/dashboard','/pos','/dashboard/cash-register']:user.role==='Estoquista'?routes.filter(p=>p==='/dashboard'||p.includes('products')||p.includes('inventory')||p.includes('purchase-orders')):[...routes];
     if(user.store?.enabledModules?.includes('mesas_fichas')&&user.role!=='Estoquista')paths.push('/dashboard/service');
-    const channel=new MessageChannel();channel.port1.onmessage=async e=>{const snapshot=await getFromCache<any>(`${user.uid}:${user.storeId}`,'snapshot');if(!cancelled){setReady(!!e.data.ready&&!!snapshot&&!!readOfflineUser());setProblem(e.data.prepared<e.data.total?'Algumas páginas ainda estão sendo preparadas.':'');}channel.port1.close();};
+    const channel=new MessageChannel();channel.port1.onmessage=async e=>{const snapshot=await getFromCache<any>(`${user.uid}:${user.storeId}`,'snapshot');if(!cancelled){setReady(!!e.data.ready&&!!snapshot&&!!readOfflineUser());setProblem(!e.data.assetsReady?'Não foi possível guardar todos os arquivos do aplicativo. Confira o armazenamento e reconecte.':e.data.prepared<e.data.total?'Algumas páginas ainda estão sendo preparadas.':'');}channel.port1.close();};
     worker.postMessage({type:'PREPARE',scope:`${user.uid}:${user.storeId}`,paths},[channel.port2]);
     await navigator.storage?.persist?.();
    }catch{if(!cancelled)setProblem('Não foi possível preparar o aplicativo neste navegador. As operações locais permanecem salvas.');}

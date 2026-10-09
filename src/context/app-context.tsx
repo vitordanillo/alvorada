@@ -251,6 +251,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const ticket=before.tickets.find((t:any)=>t.code===args[0].trim().toUpperCase());
         if(!ticket||ticket.status!=='Pendente')throw new Error('Ficha não encontrada no dispositivo ou já retirada.');
       }
+      if(kind==='issueTickets'&&!reachable){const target=before.sales.find((s:any)=>s.id===args[0])??current.sales?.find((s:any)=>s.id===args[0]);if(!target||target.items.some((i:any)=>!Number.isInteger(i.quantity)))throw new Error('Esta venda não está disponível para fichas neste dispositivo. Conecte para consultá-la.');}
       const units=kind==='purchaseTickets'?args[0].quantity:kind==='issueTickets'?(before.sales.find((s:any)=>s.id===args[0])?.items??[]).reduce((n:number,i:any)=>n+i.quantity,0):0;
       if(units){if(!Number.isInteger(units)||units<1||units>200)throw new Error('Fichas exigem de 1 a 200 unidades.');item.ticketCodes=Array.from({length:units},()=> 'F-'+newRequestId().replaceAll('-','').slice(0,16).toUpperCase());}
       const existing=(await db.getOperations(scope)).find(op=>op.id===id);

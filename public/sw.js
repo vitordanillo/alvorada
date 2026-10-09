@@ -35,7 +35,7 @@ self.addEventListener('message',event=>{
    let prepared=0;
    for(const path of paths){try{await warm(path);const hit=await caches.open(shell()).then(c=>c.match(path));if(hit)prepared++;}catch{}}
    const cache=await caches.open(shell());const ready=assetsReady&&paths.every(path=>allowed(path))&&prepared===paths.length;
-   event.ports[0]?.postMessage({ready,prepared,total:paths.length});
+   event.ports[0]?.postMessage({ready,assetsReady,prepared,total:paths.length});
    if(ready)for(const key of await caches.keys())if(key.startsWith('alvorada-shell-')&&key!==shell())await caches.delete(key);
   }
  })());
