@@ -48,9 +48,9 @@ export function UserNav() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+        <Button variant="ghost" aria-label="Abrir menu da conta" className="relative h-10 w-10 rounded-full">
           <Avatar className="h-10 w-10">
-            <AvatarImage src={user?.avatarUrl || `https://placehold.co/40x40.png`} alt="@user" data-ai-hint="user avatar" />
+            <AvatarImage src={user?.avatarUrl} alt="Foto do perfil" />
             <AvatarFallback>{getInitials(user?.name)}</AvatarFallback>
           </Avatar>
         </Button>
@@ -64,14 +64,18 @@ export function UserNav() {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href="/profile">
             <User className="mr-2 h-4 w-4" />
             <span>Perfil</span>
+            </Link>
           </DropdownMenuItem>
-          <DropdownMenuItem>
+          {(user?.isPlatformAdmin || user?.role==='Administrador') && <DropdownMenuItem asChild>
+            <Link href={user?.isPlatformAdmin?'/admin':'/dashboard/settings'}>
             <Settings className="mr-2 h-4 w-4" />
-            <span>Configurações</span>
-          </DropdownMenuItem>
+            <span>{user?.isPlatformAdmin?'Administrar plataforma':'Configurações'}</span>
+            </Link>
+          </DropdownMenuItem>}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleLogout}>

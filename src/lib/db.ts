@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { Prisma, PrismaClient } from '@prisma/client';
 import type { User } from './types';
 
-type DbContext = { uid?: string; email?: string; storeId?: string; platformAdmin?: boolean; user?: User; tx?: Prisma.TransactionClient };
+type DbContext = { uid?: string; email?: string; storeId?: string; platformAdmin?: boolean; profileWrite?: boolean; user?: User; tx?: Prisma.TransactionClient };
 const context = new AsyncLocalStorage<DbContext>();
 const globalForPrisma = globalThis as unknown as { alvoradaDb?: PrismaClient };
 const client = globalForPrisma.alvoradaDb ?? new PrismaClient({ log: ['error'] });
@@ -20,7 +20,8 @@ async function setContext(tx: Prisma.TransactionClient, value: DbContext) {
     set_config('app.login_email', ${value.email ?? ''}, true),
     set_config('app.store_id', ${value.storeId ?? ''}, true),
     set_config('app.platform_admin', ${value.platformAdmin ? 'true' : 'false'}, true),
-    set_config('app.store_role', ${value.user?.role ?? ''}, true)`;
+    set_config('app.store_role', ${value.user?.role ?? ''}, true),
+    set_config('app.profile_write', ${value.profileWrite ? 'true' : 'false'}, true)`;
 }
 
 // Delegates inherit the authenticated action's RLS context. Raw SQL is reserved for health checks.

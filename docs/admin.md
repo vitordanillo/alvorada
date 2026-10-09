@@ -18,6 +18,6 @@ Pagamentos são registros administrativos; o sistema não processa cobranças ba
 
 ## Implantação
 
-Versão ativa: `C:\Sites\AlvoradaSmartMarket\app-admin`. A versão anterior permanece em `app-multistore`. O diretório de build é escolhido por `ALVORADA_BUILD_DIR`; esta publicação final usa `.next-settings`. O PM2 e a tarefa AlvoradaSmartMarket-Startup restauram os processos web e de cobranças.
+Versão ativa: `C:\Sites\AlvoradaSmartMarket\app-admin`. A versão anterior permanece em `app-multistore`. O diretório de build é escolhido por `ALVORADA_BUILD_DIR`; esta publicação final usa `.next-profile`. O PM2 e a tarefa AlvoradaSmartMarket-Startup restauram os processos web e de cobranças.
 
 Validação: build e TypeScript, testes de fim de mês/ano bissexto, testes de autorização e cobrança em schema descartável, login HTTP e navegação no navegador, acesso de suporte e preservação dos vínculos de Vitor. O backup anterior à mudança foi restaurado e seus registros conferidos em uma cópia separada.
