@@ -1,14 +1,15 @@
 'use server';
 
 import { prisma, withTransaction, withDbContext, currentEntityId, currentOperationTime } from './db';
-import { currentUser, resolveUser, setAuthCookie, getAuthenticatedUser, verifyUserRole, withAuthenticatedAction, mapStore } from './auth';
+import { currentUser, resolveUser, setAuthCookie, getAuthenticatedUser, verifyUserRole, withAuthenticatedAction, mapStore, hardenExistingAuthCookie } from './auth';
 import { Prisma } from '@prisma/client';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
 import { recordLoginAttempt, clearLoginAttempts } from './login-rate-limit';
 import {validMeasurement} from './measure-units';
 import { dataPlan } from './data-plan';
+import { restrictDataPlan } from './data-access';
 import { processSale } from './sales-service';
 import { ensureUserCapacity } from './billing';
 import type {
@@ -199,12 +200,15 @@ const mapPurchaseOrder = (po: any): PurchaseOrder => ({
 export async function getCurrentUserAction(): Promise<User | null> {
   const user=await currentUser();
   if(!user) (await cookies()).delete('alvorada-session');
+  else await hardenExistingAuthCookie();
   return user;
 }
 
 export async function loginUserAction(email: string, password: string): Promise<User> {
   if (typeof email !== 'string' || typeof password !== 'string' || email.length > 254 || Buffer.byteLength(password) > 72) throw new Error('E-mail ou senha inválidos.');
   const normalizedEmail=email.trim().toLowerCase();
+  const remote=(await headers()).get('x-forwarded-for')?.split(',').at(-1)?.trim()||'unknown';
+  recordLoginAttempt('ip:'+remote,60);
   recordLoginAttempt(normalizedEmail);
   const record=await withDbContext({email:normalizedEmail,uid:'',storeId:'',platformAdmin:false},()=>prisma.user.findUnique({where:{email:normalizedEmail}}));
   const valid=await bcrypt.compare(password,record?.passwordHash ?? '$2a$12$R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW');
@@ -299,7 +303,7 @@ export async function getInitialDataAction(expectedStoreId?: string, path = '/po
   const user = await getAuthenticatedUser();
   const role = user.role;
   const storeFilter = { storeId: user.storeId };
-  const {main,needed}=dataPlan(path);const page=Math.max(1,Math.min(100000,Math.floor(Number(requestedPage)||1))),pageSize=50;
+  const {main,needed}=restrictDataPlan(role,dataPlan(path));const page=Math.max(1,Math.min(100000,Math.floor(Number(requestedPage)||1))),pageSize=50;
   const q=typeof query==='string'?query.trim().slice(0,80):'';
   const options=(key:string)=>({take:key===main?pageSize:key==='products'||key==='customers'||key==='suppliers'?5000:100,skip:key===main?(page-1)*pageSize:0});
   const filters=(key:string):any=>{
@@ -335,7 +339,7 @@ export async function getInitialDataAction(expectedStoreId?: string, path = '/po
   let accountsPayable: AccountsPayable[] = [];
   let purchaseOrders: PurchaseOrder[] = [];
 
-  if (isManagement) {
+  if (isManagement || role==='Estoquista') {
     const promises: Promise<any>[] = [
       needed.has('stockEntryLogs')?prisma.stockEntryLog.findMany({where:filters('stockEntryLogs'),orderBy:{date:'desc'},...options('stockEntryLogs')}):Promise.resolve([]),
       needed.has('productChangeLogs')?prisma.productChangeLog.findMany({where:filters('productChangeLogs'),orderBy:{date:'desc'},...options('productChangeLogs')}):Promise.resolve([]),
@@ -371,7 +375,7 @@ export async function getInitialDataAction(expectedStoreId?: string, path = '/po
 
   const delegate:any=main?({products:prisma.product,customers:prisma.customer,sales:prisma.sale,suppliers:prisma.supplier,cashSessions:prisma.cashRegisterSession,accountsPayable:prisma.accountsPayable,purchaseOrders:prisma.purchaseOrder} as any)[main]:null;
   const total=delegate?await delegate.count({where:main==='sales'?saleFilter:filters(main)}):0;
-  const catalogCounts=(path==='/pos'||path==='/offline')?await Promise.all([prisma.product.count({where:storeFilter}),prisma.customer.count({where:storeFilter})]):[0,0];
+  const catalogCounts=(path==='/pos'||path==='/offline')?await Promise.all([prisma.product.count({where:storeFilter}),needed.has('customers')?prisma.customer.count({where:storeFilter}):Promise.resolve(0)]):[0,0];
   if(role==='Estoquista'&&needed.has('purchaseOrders'))purchaseOrders=(await prisma.purchaseOrder.findMany({where:filters('purchaseOrders'),orderBy:[{dateCreated:'desc'},{id:'desc'}],...options('purchaseOrders')})).map(mapPurchaseOrder);
   return {
     meta:{main,page,pageSize,total,catalogLimited:catalogCounts.some(n=>n>5000)},

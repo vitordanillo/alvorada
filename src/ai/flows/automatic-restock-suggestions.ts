@@ -13,31 +13,33 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import { getCurrentUserAction } from '@/lib/db-actions';
+import {withAuthenticatedAction,verifyUserRole} from '@/lib/auth';
+import {prisma} from '@/lib/db';
+import {recordLoginAttempt} from '@/lib/login-rate-limit';
 
 // Define the input schema for the restock suggestion flow
 const SuggestRestockInputSchema = z.object({
   products: z.array(
     z.object({
-      productId: z.string().describe('Unique identifier for the product.'),
-      productName: z.string().describe('Name of the product.'),
+      productId: z.string().uuid().describe('Unique identifier for the product.'),
+      productName: z.string().max(200).describe('Name of the product.'),
       salesData: z
         .array(
           z.object({
-            date: z.string().describe('Date of the sale (YYYY-MM-DD).'),
+            date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Date of the sale (YYYY-MM-DD).'),
             quantitySold: z
-              .number()
+              .number().finite().nonnegative()
               .describe('Quantity of the product sold on that date.'),
           })
         )
-        .describe('Sales data for the product.'),
-      currentStock: z.number().describe('Current stock level of the product.'),
+        .max(366).describe('Sales data for the product.'),
+      currentStock: z.number().finite().nonnegative().describe('Current stock level of the product.'),
       minimumStock: z
-        .number()
+        .number().finite().nonnegative()
         .describe('Minimum acceptable stock level of the product.'),
-      unit: z.string().describe('Unit of measure for the product (e.g., kg, unit).'),
+      unit: z.string().max(30).describe('Unit of measure for the product (e.g., kg, unit).'),
     })
-  ).describe('Array of product details including sales data and stock levels.'),
+  ).max(100).describe('Array of product details including sales data and stock levels.'),
 });
 
 export type SuggestRestockInput = z.infer<typeof SuggestRestockInputSchema>;
@@ -109,9 +111,12 @@ const suggestRestockFlow = ai.defineFlow(
 
 // Exported function to trigger the restock suggestion flow
 export async function suggestRestock(input: SuggestRestockInput): Promise<SuggestRestockOutput> {
-  const user = await getCurrentUserAction();
-  if (!user || !['Administrador', 'Gerente', 'Estoquista'].includes(user.role)) throw new Error('Acesso negado.');
+  return withAuthenticatedAction(async()=>{
+  const user=await verifyUserRole(['Administrador','Gerente','Estoquista']);
+  recordLoginAttempt('ai-restock:'+user.uid,5);
   const validated = SuggestRestockInputSchema.parse(input);
+  const owned=await prisma.product.count({where:{storeId:user.storeId,id:{in:validated.products.map(p=>p.productId)}}});
+  if(owned!==new Set(validated.products.map(p=>p.productId)).size)throw new Error('Produto não pertence à loja ativa.');
   if (!process.env.GOOGLE_GENAI_API_KEY) {
     return { restockSuggestions: validated.products.filter(p => p.currentStock < p.minimumStock).map(p => ({
       productId: p.productId, productName: p.productName, unit: p.unit,
@@ -120,4 +125,5 @@ export async function suggestRestock(input: SuggestRestockInput): Promise<Sugges
     })) };
   }
   return suggestRestockFlow(validated);
+  });
 }

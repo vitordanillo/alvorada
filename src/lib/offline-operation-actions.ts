@@ -72,6 +72,6 @@ export async function submitOfflineOperationAction(input:OfflineOperation){
  }));}catch(error){
   const code=(error as any)?.code;
   const transient=['P1001','P1002','P1008','P1017','P2024','P2034','MAINTENANCE'].includes(code);
-  return {ok:false as const,confirmedRejected:!transient,error:code==='MAINTENANCE'?(error as Error).message:transient?'Servidor indisponível. Operação preservada para reenvio.':error instanceof Error?error.message:'Operação não confirmada.'};
+  return {ok:false as const,confirmedRejected:!transient,error:code==='MAINTENANCE'?(error as Error).message:transient?'Servidor indisponível. Operação preservada para reenvio.':typeof code==='string'&&/^P\d{4}$/.test(code)?'Não foi possível validar esta operação. Revise os dados ou contate o suporte.':error instanceof Error?error.message:'Operação não confirmada.'};
  }
 }

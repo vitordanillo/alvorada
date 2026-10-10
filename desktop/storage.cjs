@@ -2,9 +2,11 @@
 const {DatabaseSync, backup} = require('node:sqlite');
 const fs = require('node:fs');
 const path = require('node:path');
+const {Protection}=require('./protection.cjs');
 
 class Storage {
   constructor(directory) {
+    this.protection=new Protection();
     fs.mkdirSync(directory, {recursive: true});
     this.directory = directory;
     this.db = new DatabaseSync(path.join(directory, 'alvorada.sqlite'));
@@ -17,6 +19,12 @@ class Storage {
       CREATE TABLE IF NOT EXISTS shell (scope TEXT NOT NULL, path TEXT NOT NULL, html TEXT NOT NULL, PRIMARY KEY(scope,path));
       CREATE TABLE IF NOT EXISTS metadata (id TEXT PRIMARY KEY,value TEXT NOT NULL);
       PRAGMA user_version=1; COMMIT;`);
+    this.protection.migrate(this.db);
+    const backups=path.join(directory,'backups');
+    if(fs.existsSync(backups))for(const name of fs.readdirSync(backups).filter(name=>/^alvorada-.*\.sqlite$/.test(name))){
+      const saved=new DatabaseSync(path.join(backups,name));
+      try{this.protection.migrate(saved);}catch{fs.appendFileSync(path.join(directory,'desktop.log'),'Backup anterior preservado: não foi possível verificar sua proteção.\n');}finally{saved.close();}
+    }
   }
   validate(scope, bucket, id) {
     if (typeof scope !== 'string' || !/^[a-zA-Z0-9-]+:[a-zA-Z0-9-]+$/.test(scope) || scope.length > 180) throw new Error('Loja e usuário inválidos.');
@@ -42,13 +50,21 @@ class Storage {
       value = {...value, sequence};
     }
     const sql = imported ? 'INSERT OR IGNORE INTO records(scope,bucket,id,value,sequence) VALUES (?,?,?,?,?)' : 'INSERT INTO records(scope,bucket,id,value,sequence) VALUES (?,?,?,?,?) ON CONFLICT(scope,bucket,id) DO UPDATE SET value=excluded.value, sequence=excluded.sequence';
-    this.db.prepare(sql).run(scope, bucket, id, JSON.stringify(value), sequence);
+    this.db.prepare(sql).run(scope, bucket, id, this.protection.encode(JSON.stringify(value)), sequence);
   }
-  invoke(command, scope, bucket, id, value) {
+  filterCache(value,role){
+    if(!role||!value||typeof value!=='object'||Array.isArray(value))return value;
+    const copy={...value},manager=['Administrador','Gerente'].includes(role),stock=manager||role==='Estoquista',cash=manager||role==='Operador de Caixa';
+    for(const [key,allowed] of Object.entries({customers:cash,cashSessions:cash,cashTransactions:cash,sales:manager,accountsPayable:manager,suppliers:stock,purchaseOrders:stock,stockAdjustmentLogs:stock,stockEntryLogs:stock,productChangeLogs:stock,allUsers:role==='Administrador'}))if(!allowed&&key in copy)copy[key]=[];
+    if(role!=='Administrador'&&'systemSettings' in copy)copy.systemSettings=null;
+    if(!cash&&'serviceData' in copy)copy.serviceData=null;
+    return copy;
+  }
+  invoke(command, scope, bucket, id, value, role) {
     this.validate(scope, bucket || 'cachedData', id || '_');
     switch (command) {
-      case 'get': return JSON.parse(this.db.prepare('SELECT value FROM records WHERE scope=? AND bucket=? AND id=?').get(scope,bucket,id)?.value || 'null');
-      case 'all': return this.db.prepare('SELECT value FROM records WHERE scope=? AND bucket=? ORDER BY sequence,id').all(scope,bucket).map(row => JSON.parse(row.value));
+      case 'get': {const item=JSON.parse(this.protection.decode(this.db.prepare('SELECT value FROM records WHERE scope=? AND bucket=? AND id=?').get(scope,bucket,id)?.value) || 'null');return bucket==='cachedData'?this.filterCache(item,role):item;}
+      case 'all': return this.db.prepare('SELECT value FROM records WHERE scope=? AND bucket=? ORDER BY sequence,id').all(scope,bucket).map(row => {const item=JSON.parse(this.protection.decode(row.value));return bucket==='cachedData'?this.filterCache(item,role):item;});
       case 'put': return this.transact(() => this.write(scope,bucket,id,value));
       case 'remove': this.db.prepare('DELETE FROM records WHERE scope=? AND bucket=? AND id=?').run(scope,bucket,id); return;
       case 'migrated': return !!this.db.prepare('SELECT completed FROM migrations WHERE scope=?').get(scope)?.completed;

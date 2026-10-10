@@ -18,6 +18,22 @@ let win, storage, localShell, appSession, downloaded = false, installing = false
 let status = {state:'idle', version:app.getVersion(), message:'Atualizações verificadas automaticamente.'};
 const recovery = path.join(__dirname,'recovery.html');
 const trusted = event => !!win && event.sender === win.webContents && event.senderFrame === event.sender.mainFrame && new URL(event.senderFrame.url).origin === ORIGIN;
+async function authorizeScope(scope){
+  storage.validate(scope,'cachedData','_');
+  let authoritative=false;
+  try{
+    const response=await appSession.fetch(ORIGIN+'/api/desktop-session',{bypassCustomProtocolHandlers:true,credentials:'include',cache:'no-store',signal:AbortSignal.timeout(5000)});
+    authoritative=response.ok||[401,403].includes(response.status);
+    if(!response.ok){if(authoritative)localShell.lock();throw new Error('Entre novamente para acessar os dados locais.');}
+    const identity=await response.json();
+    if(identity.scope!==scope){localShell.lock();throw new Error('Os dados pertencem a outra conta ou loja.');}
+    localShell.activate(scope,identity.expires,identity.role);return;
+  }catch(error){
+    if(authoritative)throw error;
+    if(localShell.validScope(localShell.scope)&&localShell.scope.id===scope)return;
+    throw error;
+  }
+}
 function publish(next) {status = {...status,...next}; if(win && !win.isDestroyed())win.webContents.send('alvorada:update-status',status);}
 function log(message) {
   const file = path.join(app.getPath('userData'),'desktop.log');
@@ -84,9 +100,9 @@ else {
     });
     appSession.setPermissionCheckHandler((_contents,permission,origin,details)=>origin===ORIGIN&&(permission==='persistent-storage'||permission==='media'&&details.mediaType==='video'));
     appSession.setPermissionRequestHandler((_contents,permission,callback,details)=>callback(details.requestingUrl?.startsWith(ORIGIN+'/')&&(permission==='persistent-storage'||permission==='media'&&details.mediaTypes?.includes('video')&&!details.mediaTypes?.includes('audio'))));
-    ipcMain.handle('alvorada:storage',(event,...args)=>{if(!trusted(event))throw new Error('Origem não autorizada.');return storage.invoke(...args);});
+    ipcMain.handle('alvorada:storage',async(event,command,scope,bucket,id,value)=>{if(!trusted(event))throw new Error('Origem não autorizada.');if(!localShell.validScope(localShell.scope)||localShell.scope.id!==scope)await authorizeScope(scope);return storage.invoke(command,scope,bucket,id,value,localShell.scope.role);});
     ipcMain.handle('alvorada:update-status',event=>{if(!trusted(event))throw new Error('Origem não autorizada.');return status;});
-    ipcMain.handle('alvorada:scope',(event,scope,expires)=>{if(!trusted(event))throw new Error('Origem não autorizada.');if(scope===null)localShell.lock();else localShell.activate(scope,expires);});
+    ipcMain.handle('alvorada:scope',async(event,scope)=>{if(!trusted(event))throw new Error('Origem não autorizada.');if(scope===null)localShell.lock();else await authorizeScope(scope);});
     ipcMain.handle('alvorada:retry',async event=>{if(event.sender!==win.webContents||event.senderFrame.url!==require('node:url').pathToFileURL(recovery).href)throw new Error('Origem não autorizada.');await openApp();});
     win.on('closed',()=>{win=null;});
     menu();setupUpdater();await openApp();

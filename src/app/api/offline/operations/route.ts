@@ -12,8 +12,9 @@ export async function POST(request:NextRequest){
   if(Number(request.headers.get('content-length')||0)>350000)return NextResponse.json({error:'Operação muito grande.'},{status:413});
   try{
     if(!await currentUser())return NextResponse.json({error:'Entre novamente para sincronizar. As pendências continuam salvas.'},{status:401});
-    const body=await request.text();
-    if(Buffer.byteLength(body)>350000)return NextResponse.json({error:'Operação muito grande.'},{status:413});
+    const reader=request.body?.getReader();let size=0;const chunks:Uint8Array[]=[];
+    if(reader)try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>350000){await reader.cancel();return NextResponse.json({error:'Operação muito grande.'},{status:413});}chunks.push(value);}}finally{reader.releaseLock();}
+    const body=Buffer.concat(chunks).toString('utf8');
     let input;try{input=JSON.parse(body);}catch{return NextResponse.json({error:'Operação inválida.'},{status:400});}
     const result=await submitOfflineOperationAction(input);
     if(!result.ok&&result.error==='Usuário não autenticado.')return NextResponse.json({error:'Entre novamente para sincronizar. As pendências continuam salvas.'},{status:401});

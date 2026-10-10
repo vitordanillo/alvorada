@@ -34,7 +34,7 @@ export async function setAuthCookie(uid: string, storeId?: string) {
   const payload=Buffer.from(JSON.stringify({ uid,storeId,version:record.sessionVersion,exp:Date.now()+SESSION_MAX_AGE*1000 })).toString('base64url');
   const signature=createHmac('sha256',secret()).update(payload).digest('base64url');
   (await cookies()).set(SESSION_COOKIE,`${payload}.${signature}`,{
-    path:'/',httpOnly:true,secure:process.env.AUTH_COOKIE_SECURE!=='false' && process.env.NODE_ENV==='production',sameSite:'lax',maxAge:SESSION_MAX_AGE,
+    path:'/',httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',maxAge:SESSION_MAX_AGE,
   });
 }
 
@@ -74,6 +74,18 @@ export async function currentUser(): Promise<User | null> {
   }
   const user=session ? await resolveUser(session.uid,session.storeId) : null;
   return user && (user.storeId || user.isPlatformAdmin) ? user : null;
+}
+
+export async function desktopSessionIdentity(){
+  const user=await currentUser();
+  const session=readSession((await cookies()).get(SESSION_COOKIE)?.value);
+  if(!user?.storeId||user.mustChangePassword||!session)return null;
+  return {scope:user.uid+':'+user.storeId,expires:session.exp,role:user.role};
+}
+
+export async function hardenExistingAuthCookie(){
+  const jar=await cookies(),token=jar.get(SESSION_COOKIE)?.value,session=readSession(token);
+  if(token&&session)jar.set(SESSION_COOKIE,token,{path:'/',httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',maxAge:Math.max(1,Math.floor((session.exp-Date.now())/1000))});
 }
 
 export async function withAuthenticatedAction<T>(operation: () => Promise<T>, scope: 'store'|'platform'|'identity'='store'): Promise<T> {

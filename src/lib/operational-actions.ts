@@ -12,7 +12,7 @@ function bounds(from:string,to:string){
 export async function searchStoreAction(query:string,storeId:string){return withAuthenticatedAction(async()=>{
  const user=await getAuthenticatedUser();if(storeId!==user.storeId)throw new Error('Loja ativa alterada.');
  const q=String(query).trim().slice(0,80);if(q.length<2)return [];
- const allowed=user.role!=='Estoquista';
+ const allowed=['Administrador','Gerente'].includes(user.role);
  const [products,customers,sales]=await Promise.all([
  prisma.product.findMany({where:{storeId,OR:['name','sku','barcode'].map(key=>({[key]:{contains:q,mode:'insensitive'}}))},select:{id:true,name:true,sku:true},take:6,orderBy:{name:'asc'}}),
  allowed?prisma.customer.findMany({where:{storeId,OR:[{name:{contains:q,mode:'insensitive'}},{cpfCnpj:{contains:q}}]},select:{id:true,name:true},take:6,orderBy:{name:'asc'}}):[],

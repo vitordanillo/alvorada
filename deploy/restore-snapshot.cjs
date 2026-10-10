@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const crypto = require('node:crypto');
 const path = require('node:path');
+const {unprotect}=require('./protected-buffer.cjs');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env'), quiet: true });
 require('dotenv').config({ path: path.resolve(__dirname, '../.env.migrate'), quiet: true });
 const { PrismaClient } = require('@prisma/client');
@@ -10,7 +11,7 @@ const quote = value => '"' + value.replaceAll('"','""') + '"';
 async function main() {
   const [filename,target] = process.argv.slice(2);
   if (!filename || !/^alvorada_restore_[a-z0-9_]+$/.test(target)) throw new Error('A backup file and disposable restore schema are required.');
-  const contents = fs.readFileSync(filename,'utf8');
+  const contents = unprotect(fs.readFileSync(filename)).toString('utf8');
   if (crypto.createHash('sha256').update(contents).digest('hex') !== fs.readFileSync(filename+'.sha256','utf8').trim()) throw new Error('Backup checksum mismatch.');
   const snapshot = JSON.parse(contents);
   const targetSchema = quote(target);

@@ -40,7 +40,7 @@ export function SuggestionClient() {
       }).reverse();
 
       const input = {
-        products: products.map(p => {
+        products: products.filter(p=>p.stock<=p.minStock).slice(0,100).map(p => {
           const salesData = last7Days.map(dateStr => {
             let quantitySold = 0;
             activeSales.forEach(sale => {

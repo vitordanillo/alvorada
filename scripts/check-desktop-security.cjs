@@ -1,0 +1,21 @@
+const {app}=require('electron');
+const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
+const {Storage}=require('../desktop/storage.cjs');
+app.whenReady().then(async()=>{
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'granzoti-security-'));
+ let storage=new Storage(directory);
+ const scope='user1:store1',operation={id:'op1',userId:'user1',storeId:'store1',state:'pending',note:'PRIVATE-DATA-FIXTURE'};
+ storage.invoke('put',scope,'operations','op1',operation);
+ assert.equal(storage.invoke('get',scope,'operations','op1').note,operation.note);
+ assert.match(storage.db.prepare('SELECT value FROM records').get().value,/^dpapi:v1:/);
+ const snapshot=await storage.snapshot('security');assert.ok(fs.existsSync(snapshot));
+ storage.db.prepare('UPDATE records SET value=?').run(JSON.stringify(operation));storage.close();
+ storage=new Storage(directory);
+ assert.equal(storage.invoke('all',scope,'operations').length,1);
+ assert.equal(storage.invoke('get',scope,'operations','op1').note,operation.note);
+ assert.match(storage.db.prepare('SELECT value FROM records').get().value,/^dpapi:v1:/);
+ assert.equal(fs.readFileSync(path.join(directory,'alvorada.sqlite')).includes(Buffer.from(operation.note)),false);
+ assert.equal(fs.readFileSync(snapshot).includes(Buffer.from(operation.note)),false);
+ storage.close();fs.writeFileSync(path.resolve(__dirname,'../../outputs/security-desktop-check.json'),JSON.stringify({ok:true,checks:7,realWindowsEncryption:true,productionData:false}));
+ app.exit(0);
+}).catch(error=>{fs.writeFileSync(path.resolve(__dirname,'../../outputs/security-desktop-check.json'),JSON.stringify({ok:false,error:error.message}));app.exit(1);});

@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import {currentUser} from '@/lib/auth';
+import {recordLoginAttempt} from '@/lib/login-rate-limit';
 
 /**
  * Proxy para a BrasilAPI de consulta de CNPJ.
@@ -8,6 +10,10 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ cnpj: string }> }
 ) {
+  const user=await currentUser();
+  if(!user)return NextResponse.json({error:'Usuário não autenticado.'},{status:401});
+  if(!['Administrador','Gerente','Estoquista'].includes(user.role))return NextResponse.json({error:'Acesso negado.'},{status:403});
+  try{recordLoginAttempt('cnpj:'+user.uid,60);}catch{return NextResponse.json({error:'Aguarde antes de consultar novamente.'},{status:429});}
   const { cnpj } = await params;
   const digits = cnpj.replace(/\D/g, '');
 
@@ -27,6 +33,7 @@ export async function GET(
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         },
         next: { revalidate: 86400 }, // cache por 24h
+        signal:AbortSignal.timeout(8000),
       }
     );
 
