@@ -40,6 +40,7 @@ export function PurchaseOrderClient() {
         title: "Erro!",
         description: error instanceof Error ? error.message : "Não foi possível processar o recebimento."
       });
+      throw error;
     }
   };
 

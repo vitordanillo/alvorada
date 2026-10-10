@@ -2,6 +2,7 @@
 'use client';
 
 import * as React from 'react';
+import {stockQuantityInput} from '@/lib/stock-input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -78,7 +79,7 @@ export function StockEntryClient() {
       toast({ variant: 'destructive', title: 'Dados incompletos', description: 'Adicione itens e selecione um fornecedor.' });
       return;
     }
-    if (entryItems.some(item => item.quantity <= 0 || item.cost < 0)) {
+    if (entryItems.some(item => !Number.isFinite(item.quantity) || item.quantity <= 0 || !Number.isFinite(item.cost) || item.cost < 0)) {
       toast({ variant: 'destructive', title: 'Verifique os dados.', description: 'A quantidade de todos os itens deve ser maior que zero e o custo não pode ser negativo.' });
       return;
     }
@@ -235,8 +236,8 @@ export function StockEntryClient() {
                                       id={`qty-${item.product.id}`}
                                       type="number" 
                                       value={item.quantity}
-                                      onChange={(e) => handleQuantityChange(item.product.id, parseInt(e.target.value, 10) || 0)}
-                                      min="1"
+                                      onChange={(e) => handleQuantityChange(item.product.id, stockQuantityInput(e.target.value))}
+                                      min="0.000001" step="any"
                                       className="h-9"
                                   />
                               </div>

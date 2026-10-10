@@ -5,6 +5,7 @@ import * as React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+import {stockAdjustmentSchema as adjustmentSchema} from '@/lib/stock-input';
 import { Check, ChevronsUpDown, Loader2, Minus, Plus, Search } from 'lucide-react';
 
 import { useAppContext } from '@/context/app-context';
@@ -33,11 +34,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 
-const adjustmentSchema = z.object({
-  newQuantity: z.coerce.number().int('A quantidade deve ser um número inteiro.').min(0, 'A quantidade não pode ser negativa.'),
-  reason: z.enum(['Perda', 'Avaria', 'Contagem', 'Doação', 'Outro'], { required_error: 'O motivo é obrigatório.' }),
-  notes: z.string().optional(),
-});
 
 type AdjustmentFormData = z.infer<typeof adjustmentSchema>;
 
@@ -77,17 +73,18 @@ export function StockAdjustmentClient() {
   const confirmAdjustment = async () => {
     if (!selectedProduct) return;
     
-    const data = form.getValues();
+
 
     setIsSubmitting(true);
     try {
+      const data = adjustmentSchema.parse(form.getValues());
       await adjustStock(selectedProduct.id, data.newQuantity, data.reason, data.notes);
       toast({ title: "Sucesso!", description: `Estoque de ${selectedProduct.name} ajustado com sucesso.` });
       setSelectedProduct(null);
       form.reset();
     } catch (error) {
       console.error(error);
-      toast({ variant: 'destructive', title: 'Erro!', description: 'Não foi possível ajustar o estoque.' });
+      toast({ variant: 'destructive', title: 'Erro!', description: error instanceof Error ? error.message : 'Não foi possível ajustar o estoque.' });
     } finally {
       setIsSubmitting(false);
       setIsConfirmOpen(false);
@@ -176,7 +173,7 @@ export function StockAdjustmentClient() {
                                 <FormItem>
                                 <FormLabel>Nova Quantidade</FormLabel>
                                 <FormControl>
-                                    <Input type="number" {...field} />
+                                    <Input type="number" min="0" step="any" {...field} />
                                 </FormControl>
                                 <FormMessage />
                                 </FormItem>

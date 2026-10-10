@@ -5,6 +5,7 @@ import * as React from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+import {receiveStockItemSchema as receiveItemSchema} from '@/lib/stock-input';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,17 +15,6 @@ import { Form, FormControl, FormField, FormItem, FormMessage } from '@/component
 import type { PurchaseOrder } from '@/lib/types';
 import { ScrollArea } from '../ui/scroll-area';
 
-const receiveItemSchema = z.object({
-  productId: z.string(),
-  productName: z.string(),
-  quantityOrdered: z.number(),
-  quantityAlreadyReceived: z.number(),
-  quantityReceived: z.coerce.number().int().min(0, "Deve ser >= 0"),
-  cost: z.coerce.number().min(0, "Custo inválido"),
-}).refine(data => data.quantityReceived <= (data.quantityOrdered - data.quantityAlreadyReceived), {
-    message: "Não pode receber mais do que o pendente.",
-    path: ["quantityReceived"],
-});
 
 const receiveSchema = z.object({
     items: z.array(receiveItemSchema)
@@ -75,9 +65,14 @@ export function ReceiveOrderDialog({ order, open, onOpenChange, onSubmit }: Rece
     }
     
     setIsSubmitting(true);
-    await onSubmit(order.id, itemsToReceive);
-    setIsSubmitting(false);
-    onOpenChange(false);
+    try {
+      await onSubmit(order.id, itemsToReceive);
+      onOpenChange(false);
+    } catch {
+      // The caller displays the error; keep the entered quantities for retry.
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   
   const watchedItems = form.watch('items');
@@ -114,7 +109,7 @@ export function ReceiveOrderDialog({ order, open, onOpenChange, onSubmit }: Rece
                                 render={({ field }) => (
                                     <FormItem>
                                         <Label>Recebendo Agora</Label>
-                                        <FormControl><Input type="number" {...field} /></FormControl>
+                                        <FormControl><Input type="number" min="0" step="any" {...field} /></FormControl>
                                         <FormMessage className="text-xs" />
                                     </FormItem>
                                 )}

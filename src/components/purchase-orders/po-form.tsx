@@ -159,7 +159,7 @@ export function PurchaseOrderForm({ existingOrder }: PurchaseOrderFormProps) {
                           render={({ field }) => (
                             <FormItem className="w-24">
                               <FormLabel>Quantidade</FormLabel>
-                              <FormControl><Input type="number" {...field} /></FormControl>
+                                <FormControl><Input type="number" min="0.000001" step="any" {...field} /></FormControl>
                             </FormItem>
                           )}
                         />

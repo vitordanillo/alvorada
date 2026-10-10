@@ -560,6 +560,7 @@ export async function addStockToProductsAction(
   if (!expectedStoreId || expectedStoreId !== (await getAuthenticatedUser()).storeId) throw new Error('A loja ativa mudou. Atualize a página para continuar.');
   const user = await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
   if(!Array.isArray(items) || !items.length || items.length>200 || items.some(i=>!Number.isFinite(i.quantity)||i.quantity<=0||!Number.isFinite(i.cost)||i.cost<0)) throw new Error('Itens de entrada inválidos.');
+    if(new Set(items.map(i=>i.productId)).size!==items.length)throw new Error('Produto duplicado na entrada.');
   await withTransaction(async tx=>{
   const registeredSupplier=await tx.supplier.findUnique({where:{id:supplier.id,storeId:user.storeId}});
   if(!registeredSupplier) throw new Error('Fornecedor não encontrado nesta loja.');
@@ -637,7 +638,7 @@ export async function adjustStockAction(
   return withAuthenticatedAction(async () => {
   if (!expectedStoreId || expectedStoreId !== (await getAuthenticatedUser()).storeId) throw new Error('A loja ativa mudou. Atualize a página para continuar.');
   const user = await verifyUserRole(['Administrador', 'Gerente', 'Estoquista']);
-  if(!Number.isFinite(newQuantity)||newQuantity<0||!reason||typeof reason!=='string'||!reason.trim())throw new Error('Informe quantidade válida e motivo do ajuste.');
+    if(!Number.isFinite(newQuantity)||newQuantity<0||!['Perda','Avaria','Contagem','Doação','Outro'].includes(reason))throw new Error('Informe quantidade válida e motivo do ajuste.');
   await withTransaction(async (tx) => {
     const product = await tx.product.findUnique({ where: { id: productId, storeId: user.storeId } });
     if (!product) throw new Error("Produto não encontrado.");
