@@ -11,6 +11,7 @@ const quote = value => '"' + value.replaceAll('"','""') + '"';
 async function main() {
   const [filename,target] = process.argv.slice(2);
   if (!filename || !/^alvorada_restore_[a-z0-9_]+$/.test(target)) throw new Error('A backup file and disposable restore schema are required.');
+  if(fs.existsSync(filename+'.invalid'))throw new Error('Backup flagged as incomplete. Use a verified complete snapshot.');
   const contents = unprotect(fs.readFileSync(filename)).toString('utf8');
   if (crypto.createHash('sha256').update(contents).digest('hex') !== fs.readFileSync(filename+'.sha256','utf8').trim()) throw new Error('Backup checksum mismatch.');
   const snapshot = JSON.parse(contents);

@@ -42,6 +42,7 @@ async function main() {
     return { version: 1, schema, createdAt: new Date().toISOString(), data, definitions,
       prismaSchema:fs.readFileSync(path.resolve(__dirname,'../prisma/schema.prisma'),'utf8'),migrations };
   }, { isolationLevel: 'RepeatableRead', timeout: 120000 });
+  if(snapshot.data.PlatformMaintenance?.length!==1||snapshot.data.PlatformMaintenance[0].id!=='global')throw new Error('Backup cannot verify the protected maintenance singleton.');
   const filename = path.join(directory, `alvorada-${Date.now()}.json.dpapi`);
   const contents = JSON.stringify(snapshot);
   const protectedContents=protect(Buffer.from(contents));
