@@ -79,6 +79,7 @@ export default function POSPage() {
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = React.useState(false);
 
   const [payments, setPayments] = React.useState<Payment[]>([]);
+  const [pixConfirmed, setPixConfirmed] = React.useState(false);
   const [currentPaymentAmount, setCurrentPaymentAmount] = React.useState('');
 
   const draftScope=user?.storeId?`${user.uid}:${user.storeId}`:'';
@@ -194,6 +195,10 @@ export default function POSPage() {
   };
   
   const handleFinishPurchase = async () => {
+    if (payments.some(p => p.method === 'Pix') && !pixConfirmed) {
+      toast({variant:'destructive',title:'Confirme o recebimento do Pix',description:'Confira o valor recebido na conta da loja antes de concluir.'});
+      return;
+    }
     setIsFinishing(true);
     try {
         saleRequest.current||=newRequestId();
@@ -319,24 +324,19 @@ export default function POSPage() {
         }
     }
 
-    if (method === 'Pix') {
-      toast({
-        variant: 'destructive',
-        title: 'Pix ainda não está configurado',
-        description: 'Use outro meio de pagamento até conectar um provedor Pix real.',
-      });
-      return;
-    }
+    if (method === 'Pix') setPixConfirmed(false);
 
     setPayments(prev => [...prev, { method, amount }]);
     setCurrentPaymentAmount('');
   };
 
   const handleRemovePayment = (index: number) => {
+    if (payments[index]?.method === 'Pix') setPixConfirmed(false);
     setPayments(prev => prev.filter((_, i) => i !== index));
   };
   
   const handlePaymentDialogToggle = (open: boolean) => {
+    setPixConfirmed(false);
     setIsPaymentDialogOpen(open);
     if (!open) {
         setPayments([]);
@@ -346,7 +346,7 @@ export default function POSPage() {
 
 
   const isCheckoutDisabled = cart.length === 0 || isFinishing || !activeSession;
-  const isConfirmDisabled = isFinishing || remainingAmount > 0.001;
+  const isConfirmDisabled = isFinishing || remainingAmount > 0.001 || (payments.some(p => p.method === 'Pix') && !pixConfirmed);
 
 
   if (loadingAuth || !user?.storeId || !['Administrador','Gerente','Operador de Caixa'].includes(user.role)) {
@@ -591,7 +591,7 @@ export default function POSPage() {
                         <div className="grid grid-cols-2 gap-2">
                            <Button variant="outline" className="h-12" onClick={() => handleAddPayment('Dinheiro')}><Coins className="mr-2"/> Dinheiro</Button>
                            <Button variant="outline" className="h-12" onClick={() => handleAddPayment('Cartão')}><CreditCard className="mr-2"/> Cartão</Button>
-                           <Button variant="outline" className="h-12" onClick={() => handleAddPayment('Pix')}><Pizza className="mr-2"/> Pix indisponível</Button>
+                           <Button variant="outline" className="h-12" onClick={() => handleAddPayment('Pix')}><Pizza className="mr-2"/> Pix</Button>
                            <Button variant="outline" className="h-12" onClick={() => handleAddPayment('Fiado')}><FilePen className="mr-2"/> Fiado</Button>
                             {selectedCustomer.id !== 'default' && (selectedCustomer.loyaltyPoints || 0) > 0 && (
                               <Button variant="outline" className="h-12 col-span-2 border-primary text-primary hover:bg-primary/5" onClick={() => handleAddPayment('Pontos')}>
@@ -624,6 +624,7 @@ export default function POSPage() {
                             </div>
                         )}
                     </div>
+                    {payments.some(p => p.method === 'Pix') && <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={pixConfirmed} onChange={e=>setPixConfirmed(e.target.checked)} disabled={isFinishing}/>Conferi o recebimento do Pix na conta da loja.</label>}
                     <AlertDialogFooter>
                     <AlertDialogCancel disabled={isFinishing}>Cancelar</AlertDialogCancel>
                     <AlertDialogAction onClick={handleFinishPurchase} disabled={isConfirmDisabled}>

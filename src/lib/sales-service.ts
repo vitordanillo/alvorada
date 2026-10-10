@@ -15,7 +15,7 @@ export async function processSale(
   if (!Array.isArray(saleData.paymentMethods) || !saleData.paymentMethods.length || saleData.paymentMethods.length > 20) throw new Error('Informe o pagamento.');
   const amounts = new Map<string, number>();
   for (const payment of saleData.paymentMethods) {
-    if (!['Dinheiro', 'Cartão', 'Fiado', 'Pontos',...(service?.manualPix?['Pix']:[])].includes(payment.method) || !Number.isFinite(payment.amount) || payment.amount <= 0) throw new Error('Pagamento inválido. Pix requer um provedor configurado.');
+    if (!['Dinheiro', 'Cartão', 'Fiado', 'Pontos', 'Pix'].includes(payment.method) || !Number.isFinite(payment.amount) || payment.amount <= 0) throw new Error('Pagamento inválido.');
     if(payment.cardType && (payment.method!=='Cartão'||!['Crédito','Débito'].includes(payment.cardType)))throw new Error('Tipo de cartão inválido.');
     if(Math.abs(payment.amount*100-Math.round(payment.amount*100))>0.000001)throw new Error('Informe o pagamento com até duas casas decimais.');
     amounts.set(payment.method, (amounts.get(payment.method) ?? 0) + Math.round(payment.amount * 100));
