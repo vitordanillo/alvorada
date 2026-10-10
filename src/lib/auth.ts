@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { prisma, withDbContext, currentDbUser } from './db';
 import type { Store, StoreMembership, User } from './types';
+import {assertPlatformAvailable} from './platform-status';
 
 const SESSION_COOKIE = 'alvorada-session';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
@@ -78,6 +79,7 @@ export async function currentUser(): Promise<User | null> {
 export async function withAuthenticatedAction<T>(operation: () => Promise<T>, scope: 'store'|'platform'|'identity'='store'): Promise<T> {
   const cached=currentDbUser();
   if (cached) {
+    if(scope==='store'&&!cached.isPlatformAdmin)await assertPlatformAvailable();
     if(scope!=='identity'&&cached.mustChangePassword)throw new Error('Troque sua senha temporária no Perfil antes de continuar.');
     if (scope==='platform' && !cached.isPlatformAdmin) throw new Error('Acesso restrito à administração da Granzoti Sistemas.');
     if (scope==='store' && !cached.storeId) throw new Error('Selecione uma loja ativa para continuar.');
@@ -85,6 +87,7 @@ export async function withAuthenticatedAction<T>(operation: () => Promise<T>, sc
   }
   const user=await currentUser();
   if (!user) throw new Error('Usuário não autenticado.');
+  if(scope==='store'&&!user.isPlatformAdmin)await assertPlatformAvailable();
   if(scope!=='identity'&&user.mustChangePassword)throw new Error('Troque sua senha temporária no Perfil antes de continuar.');
   if (scope==='platform' && !user.isPlatformAdmin) throw new Error('Acesso restrito à administração da Granzoti Sistemas.');
   if (scope==='store' && !user.storeId) throw new Error('Selecione uma loja ativa para continuar.');

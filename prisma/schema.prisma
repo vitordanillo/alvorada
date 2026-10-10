@@ -8,6 +8,28 @@ generator client {
   provider = "prisma-client-js"
 }
 
+model PlatformMaintenance {
+  id String @id @default("global")
+  enabled Boolean @default(false)
+  message String @default("Estamos realizando melhorias. Aguarde a liberação do sistema.") @db.Text
+  expectedReturn DateTime?
+  revision Int @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+model PlatformMessage {
+  id String @id @default(uuid())
+  kind String
+  title String @db.VarChar(120)
+  body String @db.Text
+  version String @default("") @db.VarChar(40)
+  publishedAt DateTime?
+  archived Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([publishedAt])
+}
+
 model Store {
   id        String   @id @default(uuid())
   name      String

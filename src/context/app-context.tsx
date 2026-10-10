@@ -11,6 +11,8 @@ import {getServiceDataAction} from '@/lib/service-actions';
 import {submitOfflineOperationAction} from '@/lib/offline-transport';
 import {validateOfflineOperation} from '@/lib/offline-validation';
 import {projectService} from '@/lib/offline-service-projection';
+import {ensureOperationAllowed} from '@/lib/platform-status-client';
+import {PlatformRuntime} from '@/components/layout/platform-runtime';
 import {projectOperations, type OfflineSnapshot} from '@/lib/offline-projection';
 import {rememberOfflineUser,readOfflineUser,forgetOfflineUser,serverReachable,locallySignedOut} from '@/lib/offline-session';
 import {OfflineRuntime} from '@/components/layout/offline-runtime';
@@ -235,6 +237,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const executeOfflineOperation=(kind:string,args:any[]):Promise<any>=>{
     const run=async()=>{
       if(!user?.storeId||!operationLabels[kind])throw new Error('Selecione uma loja para continuar.');
+      if(!user.isPlatformAdmin)await ensureOperationAllowed();
       if(baseRef.current.store?.id!==user.storeId)throw new Error('Aguarde a preparação dos dados desta loja antes de registrar operações.');
       const scope=cacheScope,db=await import('@/lib/offline-db');
       const id=kind==='sale'&&/^[a-f0-9-]{36}$/i.test(args[0]?.clientRequestId??'')?args[0].clientRequestId:newRequestId();const item:OfflineOperation={id,storeId:user.storeId,userId:user.uid,kind,args:JSON.parse(JSON.stringify(args)),createdAt:new Date().toISOString(),sequence:Date.now()*1000,attempts:0,state:'pending'};
@@ -596,7 +599,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       addPayable, updatePayable, deletePayable, markPayableAsPaid, addPurchaseOrder, updatePurchaseOrder,
       receivePurchaseOrder, login, logout, reloadUser, dataError, dataPage, syncOfflineSales, offlineSync, offlineOperations, isOffline, executeOfflineOperation, retryData:refreshData
     }}>
-      <OfflineRuntime />{children}
+      <PlatformRuntime><OfflineRuntime />{children}</PlatformRuntime>
     </AppContext.Provider>
   );
 };

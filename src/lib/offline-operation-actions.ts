@@ -71,7 +71,7 @@ export async function submitOfflineOperationAction(input:OfflineOperation){
   return {ok:true as const,result:serialized};
  }));}catch(error){
   const code=(error as any)?.code;
-  const transient=['P1001','P1002','P1008','P1017','P2024','P2034'].includes(code);
-  return {ok:false as const,confirmedRejected:!transient,error:transient?'Servidor indisponível. Operação preservada para reenvio.':error instanceof Error?error.message:'Operação não confirmada.'};
+  const transient=['P1001','P1002','P1008','P1017','P2024','P2034','MAINTENANCE'].includes(code);
+  return {ok:false as const,confirmedRejected:!transient,error:code==='MAINTENANCE'?(error as Error).message:transient?'Servidor indisponível. Operação preservada para reenvio.':error instanceof Error?error.message:'Operação não confirmada.'};
  }
 }
