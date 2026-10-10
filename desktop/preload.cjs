@@ -8,6 +8,7 @@ if (location.origin === 'https://alvorada.firmaconecta.com') {
     updateStatus: () => ipcRenderer.invoke('alvorada:update-status'),
     activateScope: (scope,expires) => ipcRenderer.invoke('alvorada:scope',scope,expires),
     lock: () => ipcRenderer.invoke('alvorada:scope',null),
+    protectLegacy: (scope,value,decode=false) => ipcRenderer.invoke('alvorada:legacy-protection',scope,value,decode),
     subscribeUpdates: (callback) => {
       const listener = (_event, value) => callback(value);
       ipcRenderer.on('alvorada:update-status',listener);

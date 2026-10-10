@@ -16,6 +16,10 @@ app.whenReady().then(async()=>{
  assert.match(storage.db.prepare('SELECT value FROM records').get().value,/^dpapi:v1:/);
  assert.equal(fs.readFileSync(path.join(directory,'alvorada.sqlite')).includes(Buffer.from(operation.note)),false);
  assert.equal(fs.readFileSync(snapshot).includes(Buffer.from(operation.note)),false);
- storage.close();fs.writeFileSync(path.resolve(__dirname,'../../outputs/security-desktop-check.json'),JSON.stringify({ok:true,checks:7,realWindowsEncryption:true,productionData:false}));
+ storage.invoke('put',scope,'cachedData','snapshot',{sales:[{id:'sale'}],suppliers:[{id:'supplier'}]});
+ assert.equal(storage.invoke('get',scope,'cachedData','snapshot',undefined,'Estoquista').sales.length,0);
+ assert.equal(storage.invoke('get',scope,'cachedData','snapshot',undefined,'Estoquista').suppliers.length,1);
+ assert.equal(storage.invoke('get',scope,'cachedData','snapshot',undefined,'Operador de Caixa').suppliers.length,0);
+ storage.close();fs.writeFileSync(path.resolve(__dirname,'../../outputs/security-desktop-check.json'),JSON.stringify({ok:true,checks:10,realWindowsEncryption:true,productionData:false}));
  app.exit(0);
 }).catch(error=>{fs.writeFileSync(path.resolve(__dirname,'../../outputs/security-desktop-check.json'),JSON.stringify({ok:false,error:error.message}));app.exit(1);});

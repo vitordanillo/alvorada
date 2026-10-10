@@ -68,6 +68,8 @@ class Storage {
       case 'put': return this.transact(() => this.write(scope,bucket,id,value));
       case 'remove': this.db.prepare('DELETE FROM records WHERE scope=? AND bucket=? AND id=?').run(scope,bucket,id); return;
       case 'migrated': return !!this.db.prepare('SELECT completed FROM migrations WHERE scope=?').get(scope)?.completed;
+      case 'legacyProtected': return !!this.db.prepare('SELECT value FROM metadata WHERE id=?').get('legacyProtected:'+scope);
+      case 'markLegacyProtected': this.db.prepare('INSERT OR REPLACE INTO metadata(id,value) VALUES (?,?)').run('legacyProtected:'+scope,this.protection.encode('true')); return;
       case 'import': return this.transact(() => {
         if (!value || !Array.isArray(value.records) || value.records.length > 20000) throw new Error('Importação inválida.');
         for (const row of value.records) this.write(scope,row.bucket,row.id,row.value,true);

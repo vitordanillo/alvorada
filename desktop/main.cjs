@@ -102,6 +102,12 @@ else {
     appSession.setPermissionRequestHandler((_contents,permission,callback,details)=>callback(details.requestingUrl?.startsWith(ORIGIN+'/')&&(permission==='persistent-storage'||permission==='media'&&details.mediaTypes?.includes('video')&&!details.mediaTypes?.includes('audio'))));
     ipcMain.handle('alvorada:storage',async(event,command,scope,bucket,id,value)=>{if(!trusted(event))throw new Error('Origem não autorizada.');if(!localShell.validScope(localShell.scope)||localShell.scope.id!==scope)await authorizeScope(scope);return storage.invoke(command,scope,bucket,id,value,localShell.scope.role);});
     ipcMain.handle('alvorada:update-status',event=>{if(!trusted(event))throw new Error('Origem não autorizada.');return status;});
+    ipcMain.handle('alvorada:legacy-protection',async(event,scope,value,decode)=>{
+      if(!trusted(event))throw new Error('Origem não autorizada.');
+      if(!localShell.validScope(localShell.scope)||localShell.scope.id!==scope)await authorizeScope(scope);
+      if(decode){const record=JSON.parse(storage.protection.decode(value));if(record.scope!==scope)throw new Error('Registro de outra conta.');return record.value;}
+      const record=JSON.stringify({scope,value});if(Buffer.byteLength(record)>24*1024*1024)throw new Error('Registro local muito grande.');return storage.protection.encode(record);
+    });
     ipcMain.handle('alvorada:scope',async(event,scope)=>{if(!trusted(event))throw new Error('Origem não autorizada.');if(scope===null)localShell.lock();else await authorizeScope(scope);});
     ipcMain.handle('alvorada:retry',async event=>{if(event.sender!==win.webContents||event.senderFrame.url!==require('node:url').pathToFileURL(recovery).href)throw new Error('Origem não autorizada.');await openApp();});
     win.on('closed',()=>{win=null;});
