@@ -38,8 +38,8 @@ export function OfflineRuntime(){
   return()=>{cancelled=true;document.removeEventListener('click',navigate,true);window.removeEventListener('online',prepare);};
  },[user?.uid,user?.storeId,user?.role]);
  if(!user?.storeId)return null;
- return <div className={`flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-6 py-2 text-sm ${isOffline?'bg-amber-50 text-amber-900':'bg-background text-muted-foreground'}`}>
-  <div role="status" className="min-w-0 flex-1">{isOffline?'Sem conexão · Operações salvas neste dispositivo aguardam sincronização.':offlineOperations.length?offlineOperations.length+' operações locais aguardam confirmação.':ready?'Dispositivo preparado para operar offline.':problem||'Preparando este dispositivo para operar offline…'}{update&&['downloading','ready'].includes(update.state)&&<span className="ml-4">{update.message}</span>}</div>
-  <OfflineSyncPanel />
+ const statusMessage=isOffline?'Sem conexão · Operações salvas neste dispositivo aguardam sincronização.':offlineOperations.length?offlineOperations.length+' operações locais aguardam confirmação.':ready?'Dispositivo preparado para operar offline.':problem||'Preparando este dispositivo para operar offline…';
+ return <div className="flex justify-end border-b bg-background px-6 py-2 text-sm text-muted-foreground">
+  <OfflineSyncPanel statusMessage={statusMessage} updateMessage={update&&['downloading','ready'].includes(update.state)?update.message:undefined} />
  </div>;
 }
