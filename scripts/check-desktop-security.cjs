@@ -20,6 +20,10 @@ app.whenReady().then(async()=>{
  assert.equal(storage.invoke('get',scope,'cachedData','snapshot',undefined,'Estoquista').sales.length,0);
  assert.equal(storage.invoke('get',scope,'cachedData','snapshot',undefined,'Estoquista').suppliers.length,1);
  assert.equal(storage.invoke('get',scope,'cachedData','snapshot',undefined,'Operador de Caixa').suppliers.length,0);
- storage.close();fs.writeFileSync(path.resolve(__dirname,'../../outputs/security-desktop-check.json'),JSON.stringify({ok:true,checks:10,realWindowsEncryption:true,productionData:false}));
+ storage.invoke('put',scope,'cachedData','service:base',{tabs:[{total:42}]});
+ assert.equal(storage.invoke('get',scope,'cachedData','service:base',undefined,'Estoquista'),null);
+ storage.invoke('put',scope,'cachedData','sales',[{total:42}]);
+ assert.equal(storage.invoke('get',scope,'cachedData','sales',undefined,'Estoquista'),null);
+ storage.close();fs.writeFileSync(path.resolve(__dirname,'../../outputs/security-desktop-check.json'),JSON.stringify({ok:true,checks:12,realWindowsEncryption:true,productionData:false}));
  app.exit(0);
 }).catch(error=>{fs.writeFileSync(path.resolve(__dirname,'../../outputs/security-desktop-check.json'),JSON.stringify({ok:false,error:error.message}));app.exit(1);});
