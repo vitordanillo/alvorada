@@ -105,7 +105,7 @@ else {
     ipcMain.handle('alvorada:legacy-protection',async(event,scope,value,decode)=>{
       if(!trusted(event))throw new Error('Origem não autorizada.');
       if(!localShell.validScope(localShell.scope)||localShell.scope.id!==scope)await authorizeScope(scope);
-      if(decode){const record=JSON.parse(storage.protection.decode(value));if(record.scope!==scope)throw new Error('Registro de outra conta.');return record.value;}
+      if(decode){if(typeof value!=='string'||Buffer.byteLength(value)>34*1024*1024)throw new Error('Registro protegido inválido.');const record=JSON.parse(storage.protection.decode(value));if(record.scope!==scope)throw new Error('Registro de outra conta.');return record.value;}
       const record=JSON.stringify({scope,value});if(Buffer.byteLength(record)>24*1024*1024)throw new Error('Registro local muito grande.');return storage.protection.encode(record);
     });
     ipcMain.handle('alvorada:scope',async(event,scope)=>{if(!trusted(event))throw new Error('Origem não autorizada.');if(scope===null)localShell.lock();else await authorizeScope(scope);});
