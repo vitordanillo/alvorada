@@ -46,7 +46,7 @@ export default function ServicePage() {
  if(await serverReachable()){base=await getServiceDataAction(storeId);await saveToCache(scope,'service:base',base);}
  if(!base)throw new Error('Conecte uma vez para preparar as mesas e fichas deste dispositivo.');
  const projected=projectService(base,offlineOperations,user!,{products:coreProducts,cashSessions:coreSessions,sales:coreSales}).data;
- if(query)projected.products=projected.products.filter((p:any)=>p.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+ if(query.trim())projected.products=projected.products.filter((p:Product)=>p.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
  if(current===sequence.current){setData(projected);setError('');}
 }
     catch(c){if(current===sequence.current){setData(null);setError(c instanceof Error?c.message:'Não foi possível carregar.');}}
